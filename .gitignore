@@ -1,0 +1,30 @@
+.gitignore
+
+# Dependencies
+node_modules/
+
+# Build outputs
+out/
+dist/
+
+# electron-vite cache
+.vite/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Env files
+.env
+.env.local
+
+# electron-builder
+release/
