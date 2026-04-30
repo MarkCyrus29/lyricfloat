@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 
 const FONT_OPTIONS = [
   { value: 'small', label: 'Small' },
@@ -11,7 +11,11 @@ export default function SettingsWindow() {
   const [alwaysOnTop, setAlwaysOnTop] = useState(true)
   const [hideWhenPaused, setHideWhenPaused] = useState(false)
   const [fontSize, setFontSize] = useState('medium')
+  const [opacity, setOpacity] = useState(0.92)
+  const [bgColor, setBgColor] = useState('rgba(18,18,18,0.92)')
   const [loaded, setLoaded] = useState(false)
+
+  const originalSettings = useRef({})
 
   // Load current settings
   useEffect(() => {
@@ -22,10 +26,22 @@ export default function SettingsWindow() {
       const aot = await api.getSetting('alwaysOnTop')
       const hwp = await api.getSetting('hideWhenPaused')
       const fs = await api.getSetting('fontSize')
+      const op = await api.getSetting('opacity')
+      const bg = await api.getSetting('bgColor')
 
       if (aot !== undefined) setAlwaysOnTop(aot)
       if (hwp !== undefined) setHideWhenPaused(hwp)
       if (fs !== undefined) setFontSize(fs)
+      if (op !== undefined) setOpacity(op)
+      if (bg !== undefined) setBgColor(bg)
+
+      originalSettings.current = {
+        alwaysOnTop: aot ?? true,
+        hideWhenPaused: hwp ?? false,
+        fontSize: fs ?? 'medium',
+        opacity: op ?? 0.92,
+        bgColor: bg ?? 'rgba(18,18,18,0.92)'
+      }
 
       setLoaded(true)
     }
@@ -37,14 +53,76 @@ export default function SettingsWindow() {
     setter(next)
     const api = window.electronAPI
     if (api) {
-      await api.setSetting(key, next)
-      if (key === 'alwaysOnTop') await api.setAlwaysOnTop(next)
+      await api.previewSetting(key, next)
     }
   }
 
   const handleFontSize = async (val) => {
     setFontSize(val)
-    if (window.electronAPI) await window.electronAPI.setSetting('fontSize', val)
+    if (window.electronAPI) await window.electronAPI.previewSetting('fontSize', val)
+  }
+
+  const handleOpacity = async (e) => {
+    const val = parseFloat(e.target.value)
+    setOpacity(val)
+    if (window.electronAPI) {
+      await window.electronAPI.previewSetting('opacity', val)
+      await window.electronAPI.setOpacity(val)
+    }
+  }
+
+  const handleColor = async (e) => {
+    const hex = e.target.value;
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const val = `rgba(${r},${g},${b},0.92)`;
+    setBgColor(val);
+    if (window.electronAPI) await window.electronAPI.previewSetting('bgColor', val);
+  }
+
+  const toggleTransparent = async () => {
+    const val = bgColor === 'transparent' ? 'rgba(18,18,18,0.92)' : 'transparent'
+    setBgColor(val)
+    if (window.electronAPI) await window.electronAPI.previewSetting('bgColor', val);
+  }
+
+  const getHexColor = (rgba) => {
+    if (!rgba || rgba === 'transparent') return '#121212';
+    const match = rgba.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (!match) return '#121212';
+    const r = parseInt(match[1]).toString(16).padStart(2, '0');
+    const g = parseInt(match[2]).toString(16).padStart(2, '0');
+    const b = parseInt(match[3]).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`;
+  }
+
+  const isDirty = () => {
+    return (
+      alwaysOnTop !== originalSettings.current.alwaysOnTop ||
+      hideWhenPaused !== originalSettings.current.hideWhenPaused ||
+      fontSize !== originalSettings.current.fontSize ||
+      opacity !== originalSettings.current.opacity ||
+      bgColor !== originalSettings.current.bgColor
+    )
+  }
+
+  const handleSave = async () => {
+    if (window.electronAPI) {
+      await window.electronAPI.saveSetting({
+        alwaysOnTop,
+        hideWhenPaused,
+        fontSize,
+        opacity,
+        bgColor
+      })
+    }
+  }
+
+  const handleClose = async () => {
+    if (window.electronAPI) {
+      await window.electronAPI.revertSettings(originalSettings.current)
+    }
   }
 
   if (!loaded) {
@@ -56,15 +134,15 @@ export default function SettingsWindow() {
   }
 
   return (
-    <div className="w-full h-full bg-neutral-900 text-white flex flex-col select-none">
+    <div className="w-full h-full bg-neutral-900 text-white flex flex-col select-none relative">
       {/* ---- Draggable title bar ---- */}
       <div className="drag flex items-center justify-between px-5 py-4 border-b border-white/10">
         <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
         <button
-          onClick={() => window.electronAPI?.closeSettings()}
+          onClick={handleClose}
           className="no-drag w-8 h-8 rounded-lg flex items-center justify-center
             hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-          title="Close"
+          title="Close (Revert changes)"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -74,7 +152,7 @@ export default function SettingsWindow() {
       </div>
 
       {/* ---- Settings content ---- */}
-      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
+      <div className="flex-1 overflow-y-auto settings-scroll px-5 py-5 space-y-6 pb-24">
         {/* Always on Top toggle */}
         <div className="flex items-center justify-between">
           <div>
@@ -135,6 +213,47 @@ export default function SettingsWindow() {
           </div>
         </div>
 
+        {/* Opacity slider */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Window Opacity</p>
+            <p className="text-xs text-white/40">Adjust the transparency of the window</p>
+          </div>
+          <input
+            type="range"
+            min="0.1"
+            max="1"
+            step="0.05"
+            value={opacity}
+            onChange={handleOpacity}
+            className="no-drag w-24 h-1 accent-green-500 cursor-pointer"
+          />
+        </div>
+
+        {/* Background Color */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Background Color</p>
+            <p className="text-xs text-white/40">Set the background color of the lyrics window</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="cursor-pointer">
+              <input
+                type="color"
+                value={getHexColor(bgColor)}
+                onChange={handleColor}
+                className="no-drag w-8 h-8 rounded-full border-0 cursor-pointer bg-transparent"
+              />
+            </label>
+            <button
+              onClick={toggleTransparent}
+              className="no-drag text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white font-medium transition-colors"
+            >
+              {bgColor === 'transparent' ? 'FILL' : 'CLEAR'}
+            </button>
+          </div>
+        </div>
+
         {/* Divider */}
         <hr className="border-white/10" />
 
@@ -144,6 +263,21 @@ export default function SettingsWindow() {
           <p>Floating synced lyrics overlay</p>
           <p>Lyrics powered by LRCLIB</p>
         </div>
+      </div>
+      
+      {/* Footer Actions */}
+      <div className="absolute bottom-0 left-0 right-0 p-5 bg-neutral-900 border-t border-white/10">
+        <button
+          onClick={handleSave}
+          disabled={!isDirty()}
+          className={`no-drag w-full py-2.5 rounded-xl font-medium transition-colors ${
+            isDirty() 
+              ? 'bg-green-500 hover:bg-green-400 text-black' 
+              : 'bg-white/10 text-white/40 cursor-not-allowed'
+          }`}
+        >
+          Save Settings
+        </button>
       </div>
     </div>
   )

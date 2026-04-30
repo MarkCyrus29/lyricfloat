@@ -37,6 +37,13 @@
     },
     "linux": {
       "target": "AppImage"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png",
+        "filter": ["**/*"]
+      }
+    ]
   }
 }

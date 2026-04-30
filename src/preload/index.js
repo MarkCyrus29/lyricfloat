@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /* ---- Settings ---- */
   getSetting: (key) => ipcRenderer.invoke('store:get', key),
   setSetting: (key, value) => ipcRenderer.invoke('store:set', key, value),
+  previewSetting: (key, value) => ipcRenderer.invoke('settings:preview', key, value),
+  saveSetting: (settings) => ipcRenderer.invoke('settings:save', settings),
+  revertSettings: (settings) => ipcRenderer.invoke('settings:revert', settings),
 
   /* ---- Window controls ---- */
   setOpacity: (value) => ipcRenderer.invoke('window:setOpacity', value),
@@ -27,6 +30,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event, data) => cb(data)
     ipcRenderer.on('lyrics:loaded', handler)
     return () => ipcRenderer.removeListener('lyrics:loaded', handler)
+  },
+  onSettingsChanged: (cb) => {
+    const handler = (_event, data) => cb(data)
+    ipcRenderer.on('settings:changed', handler)
+    return () => ipcRenderer.removeListener('settings:changed', handler)
   },
 
   /* ---- Cleanup ---- */

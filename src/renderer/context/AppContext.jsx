@@ -40,6 +40,12 @@ export function AppProvider({ children }) {
     const unsubs = []
 
     unsubs.push(
+      api.onSettingsChanged && api.onSettingsChanged(({ key, value }) => {
+        setSettingsState((prev) => ({ ...prev, [key]: value }))
+      })
+    )
+
+    unsubs.push(
       api.onSongChanged((data) => {
         setSong(data)
         setLyrics(null)

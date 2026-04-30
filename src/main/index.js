@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen } from 'electron'
 import { join } from 'path'
+import fs from 'fs'
 import Store from 'electron-store'
 import { startSMTCBridge, stopSMTCBridge } from './powerShellBridge.js'
 import { getLyrics } from './lyricsAPI.js'
@@ -34,6 +35,7 @@ function createLyricsWindow() {
   lyricsWindow = new BrowserWindow({
     width: bounds.width,
     height: bounds.height,
+    minWidth: 280,
     x: savedPos?.x,
     y: savedPos?.y,
     frame: false,
@@ -128,11 +130,24 @@ function createSettingsWindow() {
 /*  System Tray                                                       */
 /* ------------------------------------------------------------------ */
 function createTray() {
-  // Create a simple 16x16 tray icon programmatically
-  const icon = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAMElEQVQ4T2P8z8BQz0BAwMDAwMDIQCRg' +
-    'YGBgYPj//389AwODADEaR8NgNAxGfBgAAOJBD/Hy8bUAAAAASUVORK5CYII='
-  )
+  let iconPath;
+  if (app.isPackaged) {
+    iconPath = join(process.resourcesPath, 'icon.png');
+  } else {
+    iconPath = join(__dirname, '../../build/icon.png');
+  }
+
+  let icon;
+  if (fs.existsSync(iconPath)) {
+    icon = nativeImage.createFromPath(iconPath);
+  } else {
+    // Fallback to simple 16x16 tray icon programmatically
+    icon = nativeImage.createFromDataURL(
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAMElEQVQ4T2P8z8BQz0BAwMDAwMDIQCRg' +
+      'YGBgYPj//389AwODADEaR8NgNAxGfBgAAOJBD/Hy8bUAAAAASUVORK5CYII='
+    )
+  }
+
   tray = new Tray(icon)
   tray.setToolTip('LyricFloat')
 
@@ -176,6 +191,35 @@ function setupIPC() {
   ipcMain.handle('store:get', (_event, key) => store.get(key))
   ipcMain.handle('store:set', (_event, key, value) => {
     store.set(key, value)
+    return true
+  })
+
+  ipcMain.handle('settings:preview', (_event, key, value) => {
+    if (lyricsWindow) lyricsWindow.webContents.send('settings:changed', { key, value })
+    if (key === 'alwaysOnTop' && lyricsWindow) lyricsWindow.setAlwaysOnTop(!!value)
+    return true
+  })
+
+  ipcMain.handle('settings:save', (_event, settings) => {
+    for (const [key, value] of Object.entries(settings)) {
+      store.set(key, value)
+      if (lyricsWindow) lyricsWindow.webContents.send('settings:changed', { key, value })
+    }
+    if (settings.alwaysOnTop !== undefined && lyricsWindow) {
+      lyricsWindow.setAlwaysOnTop(!!settings.alwaysOnTop)
+    }
+    if (settingsWindow) settingsWindow.close()
+    return true
+  })
+
+  ipcMain.handle('settings:revert', (_event, settings) => {
+    for (const [key, value] of Object.entries(settings)) {
+      if (lyricsWindow) lyricsWindow.webContents.send('settings:changed', { key, value })
+    }
+    if (settings.alwaysOnTop !== undefined && lyricsWindow) {
+      lyricsWindow.setAlwaysOnTop(!!settings.alwaysOnTop)
+    }
+    if (settingsWindow) settingsWindow.close()
     return true
   })
 

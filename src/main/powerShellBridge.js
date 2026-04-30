@@ -49,6 +49,15 @@ while ($true) {
     $isPlaying = $playbackInfo.PlaybackStatus -eq 'Playing'
     $positionMs = [long]$timeline.Position.TotalMilliseconds
 
+    # Extrapolate actual position to eliminate 1-2s lag
+    if ($isPlaying -and $null -ne $timeline.LastUpdatedTime) {
+        $now = [DateTimeOffset]::UtcNow
+        $diff = ($now - $timeline.LastUpdatedTime).TotalMilliseconds
+        if ($diff -gt 0) {
+            $positionMs += [long]$diff
+        }
+    }
+
     Write-Output "SMTC_DATA|||$title|||$artist|||$isPlaying|||$positionMs"
     [Console]::Out.Flush()
     Start-Sleep -Milliseconds 100

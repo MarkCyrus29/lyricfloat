@@ -28,3 +28,5 @@ Thumbs.db
 
 # electron-builder
 release/
+
+electron.vite.config.*.mjs
