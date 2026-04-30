@@ -256,8 +256,9 @@ function setupIPC() {
     return true
   })
 
-  ipcMain.handle('window:minimizeLyrics', () => {
-    if (lyricsWindow) lyricsWindow.minimize()
+  ipcMain.handle('window:closeApp', () => {
+    stopSMTCBridge()
+    app.quit()
     return true
   })
 

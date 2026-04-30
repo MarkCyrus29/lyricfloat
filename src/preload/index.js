@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAlwaysOnTop: (value) => ipcRenderer.invoke('window:setAlwaysOnTop', value),
   openSettings: () => ipcRenderer.invoke('window:openSettings'),
   closeSettings: () => ipcRenderer.invoke('window:closeSettings'),
-  minimizeLyrics: () => ipcRenderer.invoke('window:minimizeLyrics'),
+  closeApp: () => ipcRenderer.invoke('window:closeApp'),
 
   /* ---- Event listeners (renderer ← main) ---- */
   onSongChanged: (cb) => {
