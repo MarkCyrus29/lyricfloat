@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 import Store from 'electron-store'
@@ -267,6 +267,11 @@ function setupIPC() {
       if (currentSongInfo) lyricsWindow.webContents.send('song:changed', currentSongInfo)
       if (currentLyrics) lyricsWindow.webContents.send('lyrics:loaded', currentLyrics)
     }
+    return true
+  })
+
+  ipcMain.handle('open-external', (_event, url) => {
+    shell.openExternal(url)
     return true
   })
 }

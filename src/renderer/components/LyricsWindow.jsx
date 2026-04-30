@@ -81,9 +81,12 @@ export default function LyricsWindow() {
   if (!song) {
     return (
       <div
-        className="drag w-full h-full flex items-center justify-center rounded-2xl"
+        className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
         style={{ background: bgColor }}
       >
+        <button onClick={() => window.electronAPI?.closeApp()} className="no-drag absolute top-4 right-4 text-white/50 hover:text-white z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors" title="Close App">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
         <div
           className="text-center px-6 py-8 rounded-2xl"
           style={
@@ -112,9 +115,12 @@ export default function LyricsWindow() {
   if (lyricsLoading) {
     return (
       <div
-        className="drag w-full h-full flex items-center justify-center rounded-2xl"
+        className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
         style={{ background: bgColor }}
       >
+        <button onClick={() => window.electronAPI?.closeApp()} className="no-drag absolute top-4 right-4 text-white/50 hover:text-white z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors" title="Close App">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
         <div
           className="text-center flex flex-col items-center px-6 py-8 rounded-2xl"
           style={
@@ -142,9 +148,12 @@ export default function LyricsWindow() {
   if (!lyrics?.lines?.length) {
     return (
       <div
-        className="drag w-full h-full flex items-center justify-center rounded-2xl"
+        className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
         style={{ background: bgColor }}
       >
+        <button onClick={() => window.electronAPI?.closeApp()} className="no-drag absolute top-4 right-4 text-white/50 hover:text-white z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors" title="Close App">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
         <div
           className="text-center flex flex-col items-center px-6 py-8 rounded-2xl"
           style={

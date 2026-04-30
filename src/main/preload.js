@@ -52,5 +52,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
 
   /* ---- Sync ---- */
-  requestState: () => ipcRenderer.invoke('lyrics:request-state')
+  requestState: () => ipcRenderer.invoke('lyrics:request-state'),
+
+  /* ---- External Links ---- */
+  openExternal: (url) => ipcRenderer.invoke('open-external', url)
 })

@@ -1,14 +1,13 @@
-import { exec, spawn } from 'child_process'
-import { writeFileSync, appendFileSync } from 'fs'
+import { spawn } from 'child_process'
+import { writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
 let psChild = null
 let lastSongKey = ''
-let lastFallbackTime = 0
 
 /* ------------------------------------------------------------------ */
-/*  Primary: SMTC via WinRT (Persistent Process)                      */
+/*  Primary: SMTC via WinRT + Fallback Title Scraping (Persistent)    */
 /* ------------------------------------------------------------------ */
 const SMTC_SCRIPT = `
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -27,10 +26,15 @@ $sessionManager = $netTask.Result
 
 while ($true) {
     $session = $sessionManager.GetCurrentSession()
+    
+    # If no SMTC session, fallback to window title scraping
     if ($null -eq $session) {
-        Write-Output 'NO_SESSION'
+        $procs = Get-Process spotify, chrome, msedge, firefox -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -ne '' }
+        foreach ($p in $procs) {
+            Write-Output "FALLBACK_DATA|||$($p.ProcessName)|||$($p.MainWindowTitle)"
+        }
         [Console]::Out.Flush()
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Milliseconds 1000
         continue
     }
 
@@ -68,63 +72,6 @@ const smtcScriptPath = join(tmpdir(), 'lyricfloat_smtc_loop.ps1')
 try { writeFileSync(smtcScriptPath, SMTC_SCRIPT) } catch(e) {}
 
 /* ------------------------------------------------------------------ */
-/*  Fallback: window-title scraping                                   */
-/* ------------------------------------------------------------------ */
-const TITLE_SCRIPT = `
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$procs = Get-Process spotify, chrome, msedge, firefox -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -ne '' }
-foreach ($p in $procs) { Write-Output "$($p.ProcessName)|||$($p.MainWindowTitle)" }
-`.trim()
-
-const titleScriptPath = join(tmpdir(), 'lyricfloat_title.ps1')
-try { writeFileSync(titleScriptPath, TITLE_SCRIPT) } catch(e) {}
-
-function runTitleScrape() {
-  return new Promise((resolve) => {
-    exec(
-      `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${titleScriptPath}"`,
-      { timeout: 3000 },
-      (err, stdout, stderr) => {
-        if (err || !stdout) { resolve(null); return }
-        const lines = stdout.trim().split('\n')
-        for (const line of lines) {
-          const [proc, ...rest] = line.split('|||')
-          const windowTitle = rest.join('|||').trim()
-
-          // Spotify: "Artist - Title" or "Title - Artist" or "Spotify Premium"
-          if (proc && proc.toLowerCase().includes('spotify') && windowTitle.includes(' - ')) {
-            const dashIdx = windowTitle.indexOf(' - ')
-            resolve({
-              title: windowTitle.slice(dashIdx + 3).trim(),
-              artist: windowTitle.slice(0, dashIdx).trim(),
-              isPlaying: true,
-              positionMs: 0
-            })
-            return
-          }
-
-          // Browser: often "Title - YouTube" or "Song • Artist" etc.
-          if (windowTitle.includes(' - YouTube')) {
-            const raw = windowTitle.replace(' - YouTube', '').trim()
-            const dashIdx = raw.lastIndexOf(' - ')
-            if (dashIdx > 0) {
-              resolve({
-                title: raw.slice(0, dashIdx).trim(),
-                artist: raw.slice(dashIdx + 3).trim(),
-                isPlaying: true,
-                positionMs: 0
-              })
-              return
-            }
-          }
-        }
-        resolve(null)
-      }
-    )
-  })
-}
-
-/* ------------------------------------------------------------------ */
 /*  Public API                                                        */
 /* ------------------------------------------------------------------ */
 function handleNewInfo(info, onSongChanged) {
@@ -137,17 +84,6 @@ function handleNewInfo(info, onSongChanged) {
     onSongChanged({ ...info, songChanged: true })
   } else {
     onSongChanged({ ...info, songChanged: false })
-  }
-}
-
-async function triggerFallbackTitleScrape(onSongChanged) {
-  const now = Date.now()
-  if (now - lastFallbackTime < 500) return
-  lastFallbackTime = now
-  
-  const info = await runTitleScrape()
-  if (info) {
-    handleNewInfo(info, onSongChanged)
   }
 }
 
@@ -167,11 +103,7 @@ export function startSMTCBridge(onSongChanged) {
       line = line.trim()
       if (!line) continue
       
-      if (line === 'NO_SESSION') {
-        triggerFallbackTitleScrape(onSongChanged)
-        continue
-      }
-      
+      // Handle SMTC Data
       if (line.startsWith('SMTC_DATA|||')) {
         const parts = line.split('|||')
         if (parts.length < 5) continue
@@ -182,6 +114,44 @@ export function startSMTCBridge(onSongChanged) {
           positionMs: parseInt(parts[4], 10) || 0
         }
         handleNewInfo(info, onSongChanged)
+        continue
+      }
+      
+      // Handle Fallback Title Data
+      if (line.startsWith('FALLBACK_DATA|||')) {
+        const parts = line.split('|||')
+        const proc = parts[1]
+        const windowTitle = parts.slice(2).join('|||').trim()
+
+        let info = null
+        // Spotify: "Artist - Title" or "Title - Artist" or "Spotify Premium"
+        if (proc && proc.toLowerCase().includes('spotify') && windowTitle.includes(' - ')) {
+          const dashIdx = windowTitle.indexOf(' - ')
+          info = {
+            title: windowTitle.slice(dashIdx + 3).trim(),
+            artist: windowTitle.slice(0, dashIdx).trim(),
+            isPlaying: true,
+            positionMs: 0
+          }
+        }
+        // Browser: often "Title - YouTube" or "Song • Artist" etc.
+        else if (windowTitle.includes(' - YouTube')) {
+          const raw = windowTitle.replace(' - YouTube', '').trim()
+          const dashIdx = raw.lastIndexOf(' - ')
+          if (dashIdx > 0) {
+            info = {
+              title: raw.slice(0, dashIdx).trim(),
+              artist: raw.slice(dashIdx + 3).trim(),
+              isPlaying: true,
+              positionMs: 0
+            }
+          }
+        }
+
+        if (info) {
+          handleNewInfo(info, onSongChanged)
+        }
+        continue
       }
     }
   })
@@ -200,6 +170,5 @@ export function stopSMTCBridge() {
     psChild.kill()
     psChild = null
   }
-  lastFallbackTime = 0
   lastSongKey = ''
 }
