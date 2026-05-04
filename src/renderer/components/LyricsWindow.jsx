@@ -10,7 +10,7 @@ const FONT_SIZES = {
 };
 
 export default function LyricsWindow() {
-  const { song, playback, lyrics, lyricsLoading, settings, updateSetting } =
+  const { song, playbackRef, lyrics, lyricsLoading, settings, updateSetting } =
     useApp();
   const scrollRef = useRef(null);
   const activeRef = useRef(null);
@@ -44,20 +44,45 @@ export default function LyricsWindow() {
     if (settings.opacity !== undefined) setLocalOpacity(settings.opacity);
   }, [settings.opacity]);
 
-  // Determine active line index
-  const activeLine = useMemo(() => {
-    if (!lyrics?.lines?.length || !lyrics.synced) return -1;
-    const posSeconds = (playback.positionMs || 0) / 1000;
-    let active = -1;
-    for (let i = 0; i < lyrics.lines.length; i++) {
-      if (lyrics.lines[i].time <= posSeconds) {
-        active = i;
-      } else {
-        break;
-      }
+  const [activeLine, setActiveLine] = useState(-1);
+
+  // Sync activeLine via requestAnimationFrame for high performance
+  useEffect(() => {
+    if (!lyrics?.lines?.length || !lyrics.synced) {
+      setActiveLine(-1);
+      return;
     }
-    return active;
-  }, [lyrics, playback.positionMs]);
+
+    let rafId;
+    const checkLine = () => {
+      if (!playbackRef?.current) return;
+
+      const { positionMs, isPlaying, lastUpdateTime } = playbackRef.current;
+
+      // Interpolate current position based on the last IPC update
+      let currentPosMs = positionMs;
+      if (isPlaying) {
+        currentPosMs += (performance.now() - lastUpdateTime);
+      }
+
+      const posSeconds = currentPosMs / 1000;
+      let active = -1;
+      
+      for (let i = 0; i < lyrics.lines.length; i++) {
+        if (lyrics.lines[i].time <= posSeconds) {
+          active = i;
+        } else {
+          break;
+        }
+      }
+
+      setActiveLine((prev) => (prev !== active ? active : prev));
+      rafId = requestAnimationFrame(checkLine);
+    };
+
+    rafId = requestAnimationFrame(checkLine);
+    return () => cancelAnimationFrame(rafId);
+  }, [lyrics, playbackRef]);
 
   // Auto-scroll to active line
   useEffect(() => {
@@ -178,11 +203,14 @@ export default function LyricsWindow() {
 
   return (
     <div
-      className="w-full h-full flex flex-col rounded-2xl relative overflow-hidden"
+      className="drag w-full h-full flex flex-col rounded-2xl relative overflow-hidden"
       style={{ background: bgColor }}
     >
+      {/* ---- Drag handle for unsynced (scroll area is no-drag) ---- */}
+      {!lyrics.synced && <div className="drag h-12 flex-shrink-0" />}
+
       {/* ---- Lyrics scroll area ---- */}
-      <div ref={scrollRef} className="drag lyrics-scroll flex-1 px-6 py-16">
+      <div ref={scrollRef} className={`${lyrics.synced ? 'drag' : 'no-drag'} lyrics-scroll flex-1 px-6 ${lyrics.synced ? 'py-16' : 'pb-16'}`}>
         {lyrics.lines.map((line, i) => {
           const isActive = i === activeLine;
           const isPast = i < activeLine;
@@ -233,7 +261,7 @@ export default function LyricsWindow() {
 
       {/* ---- Hover control bar (AFTER drag area in DOM so no-drag wins in hit-test) ---- */}
       <div
-        className={`no-drag absolute top-0 left-0 right-0 z-50 px-4 py-3 flex flex-nowrap items-center gap-2
+        className={`drag absolute top-0 left-0 right-0 z-50 px-4 py-3 flex flex-nowrap items-center gap-2
           bg-black/60 backdrop-blur-md transition-all duration-300
           ${hovering ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-full pointer-events-none"}`}
       >
@@ -248,7 +276,7 @@ export default function LyricsWindow() {
         {/* Clear / Transparent toggle */}
         <button
           onClick={toggleTransparent}
-          className="flex-shrink-0 text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white font-medium transition-colors"
+          className="no-drag flex-shrink-0 text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white font-medium transition-colors"
           title="Toggle transparent background"
         >
           {isTransparent ? "FILL" : "CLEAR"}
@@ -257,7 +285,7 @@ export default function LyricsWindow() {
         {/* Settings gear */}
         <button
           onClick={() => window.electronAPI?.openSettings()}
-          className="flex-shrink-0 text-white/70 hover:text-white transition-colors"
+          className="no-drag flex-shrink-0 text-white/70 hover:text-white transition-colors"
           title="Settings"
         >
           <svg
@@ -278,7 +306,7 @@ export default function LyricsWindow() {
         {/* Close */}
         <button
           onClick={() => window.electronAPI?.closeApp()}
-          className="flex-shrink-0 text-white/70 hover:text-white transition-colors"
+          className="no-drag flex-shrink-0 text-white/70 hover:text-white transition-colors"
           title="Close App"
         >
           <svg
@@ -299,8 +327,9 @@ export default function LyricsWindow() {
 
       {/* Synced indicator */}
       {!lyrics.synced && (
-        <div className="absolute bottom-3 right-3 text-white/30 text-xs">
-          <TriangleAlert className="text-white" /> Unsynced lyrics
+        <div className="absolute bottom-3 right-3 text-white/30 text-xs flex items-center gap-1 flex-col bg-black/10 backdrop-blur-sm p-2  rounded-lg">
+          <TriangleAlert className="text-amber-500 opacity-80" /> 
+          <p className="text-amber-500 text-xs opacity-80" >Unsynced lyrics</p>
         </div>
       )}
     </div>

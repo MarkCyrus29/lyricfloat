@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 
 const AppContext = createContext(null)
 
@@ -14,6 +14,9 @@ export function AppProvider({ children }) {
     opacity: 0.92,
     bgColor: 'rgba(18,18,18,0.92)'
   })
+
+  // Ref for the high-frequency interpolated position to prevent React render thrashing
+  const playbackRef = useRef({ isPlaying: false, positionMs: 0, lastUpdateTime: performance.now() })
 
   // Load initial settings
   useEffect(() => {
@@ -55,7 +58,24 @@ export function AppProvider({ children }) {
 
     unsubs.push(
       api.onPlaybackChanged((data) => {
-        setPlayback(data)
+        const now = performance.now();
+        
+        playbackRef.current = {
+          isPlaying: data.isPlaying,
+          positionMs: data.positionMs,
+          lastUpdateTime: now
+        };
+
+        setPlayback((prev) => {
+          // Only update React state if play state changes or if it drifted a lot
+          // This stops the app from fully re-rendering 10 times a second
+          const timeDrift = Math.abs(prev.positionMs - data.positionMs);
+          if (prev.isPlaying !== data.isPlaying || timeDrift > 3000) {
+            return data;
+          }
+          return prev;
+        });
+
         // Force recovery if we somehow missed the song:changed event
         setSong((current) => {
           if (!current && data.title) {
@@ -98,6 +118,7 @@ export function AppProvider({ children }) {
       value={{
         song,
         playback,
+        playbackRef,
         lyrics,
         lyricsLoading,
         settings,

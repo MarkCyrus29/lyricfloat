@@ -64,7 +64,7 @@ while ($true) {
 
     Write-Output "SMTC_DATA|||$title|||$artist|||$isPlaying|||$positionMs"
     [Console]::Out.Flush()
-    Start-Sleep -Milliseconds 100
+    Start-Sleep -Milliseconds 500
 }
 `.trim()
 

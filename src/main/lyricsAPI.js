@@ -33,7 +33,7 @@ export async function getLyrics(title, artist) {
 
   try {
     const response = await fetch(url, {
-      headers: { 'User-Agent': 'LyricFloat v1.0.2 (https://github.com/lyricfloat)' }
+      headers: { 'User-Agent': 'LyricFloat v1.0.3 (https://github.com/lyricfloat)' }
     })
 
     if (!response.ok) {

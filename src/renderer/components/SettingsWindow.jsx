@@ -259,7 +259,7 @@ export default function SettingsWindow() {
 
         {/* About */}
         <div className="text-center text-white/30 text-xs space-y-1">
-          <p className="text-white/50 font-medium">LyricFloat v1.0.2</p>
+          <p className="text-white/50 font-medium">LyricFloat v1.0.3</p>
           <p>Lyrics powered by LRCLIB</p>
           <p>Made by <span onClick={() => window.electronAPI.openExternal('https://markcyruss.com')} className="text-green-500 hover:text-green-400 underline underline-offset-2 cursor-pointer">markcyruss.com</span></p>
         </div>

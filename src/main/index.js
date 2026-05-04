@@ -80,7 +80,7 @@ function createLyricsWindow() {
         inside ? 'window:mouse-enter' : 'window:mouse-leave'
       )
     }
-  }, 100)
+  }, 250)
 
   lyricsWindow.on('close', () => {
     clearInterval(cursorTracker)
