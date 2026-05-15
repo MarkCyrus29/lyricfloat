@@ -24,6 +24,54 @@ function parseLRC(lrcText) {
   return lines
 }
 
+import ColorThief from 'colorthief'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { writeFileSync, unlinkSync } from 'fs'
+
+/**
+ * Fetch album art from iTunes and extract dominant color.
+ * Returns rgb string like "rgb(255, 0, 0)" or null.
+ */
+export async function getAlbumColor(title, artist) {
+  try {
+    const query = encodeURIComponent(`${title} ${artist}`)
+    const url = `https://itunes.apple.com/search?term=${query}&media=music&entity=song&limit=1`
+    
+    const res = await fetch(url)
+    if (!res.ok) return null
+    
+    const data = await res.json()
+    if (!data.results || data.results.length === 0) return null
+    
+    const artworkUrl = data.results[0].artworkUrl100
+    if (!artworkUrl) return null
+
+    // Fetch image
+    const imgRes = await fetch(artworkUrl)
+    if (!imgRes.ok) return null
+    const arrayBuffer = await imgRes.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+    
+    // Save to temp file
+    const tmpPath = join(tmpdir(), `lyricfloat_art_${Date.now()}.jpg`)
+    writeFileSync(tmpPath, buffer)
+    
+    // Extract color
+    const color = await ColorThief.getColor(tmpPath)
+    
+    // Cleanup
+    try { unlinkSync(tmpPath) } catch(e) {}
+    
+    if (color && color.length === 3) {
+      return `rgb(${color[0]}, ${color[1]}, ${color[2]})`
+    }
+  } catch (err) {
+    console.error('[LyricsAPI] Error getting album color:', err.message)
+  }
+  return null
+}
+
 /**
  * Fetch lyrics from LRCLIB.
  * Returns { synced: boolean, lines: [{ time: number, text: string }] }
@@ -33,7 +81,7 @@ export async function getLyrics(title, artist) {
 
   try {
     const response = await fetch(url, {
-      headers: { 'User-Agent': 'LyricFloat v1.0.3 (https://github.com/lyricfloat)' }
+      headers: { 'User-Agent': 'LyricFloat v1.1.0 (https://github.com/lyricfloat)' }
     })
 
     if (!response.ok) {

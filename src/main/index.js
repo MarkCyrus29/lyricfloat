@@ -3,7 +3,7 @@ import { join } from 'path'
 import fs from 'fs'
 import Store from 'electron-store'
 import { startSMTCBridge, stopSMTCBridge } from './powerShellBridge.js'
-import { getLyrics } from './lyricsAPI.js'
+import { getLyrics, getAlbumColor } from './lyricsAPI.js'
 
 const isDev = !app.isPackaged
 const store = new Store({
@@ -13,6 +13,7 @@ const store = new Store({
     fontSize: 'medium',
     opacity: 0.92,
     bgColor: 'rgba(18,18,18,0.92)',
+    bgMode: 'album',
     lyricsBounds: { width: 420, height: 600 }
   }
 })
@@ -102,7 +103,7 @@ function createSettingsWindow() {
 
   settingsWindow = new BrowserWindow({
     width: 460,
-    height: 520,
+    height: 600,
     frame: false,
     transparent: false,
     alwaysOnTop: false,
@@ -300,19 +301,33 @@ function startSongDetection() {
 
     // Only fetch lyrics when the song actually changes
     if (info.songChanged) {
+      // Immediately clear old data so renderer shows loading state
+      currentLyrics = null
       currentSongInfo = {
         title: info.title,
         artist: info.artist,
-        isPlaying: info.isPlaying
+        isPlaying: info.isPlaying,
+        albumColor: null
       }
       lyricsWindow.webContents.send('song:changed', currentSongInfo)
 
-      // Fetch lyrics
-      const lyrics = await getLyrics(info.title, info.artist)
-      currentLyrics = lyrics
-      if (lyricsWindow) {
-        lyricsWindow.webContents.send('lyrics:loaded', lyrics)
-      }
+      // Fetch lyrics and album color in parallel
+      const bgMode = store.get('bgMode', 'album')
+      const fetchColor = bgMode === 'album' ? getAlbumColor(info.title, info.artist) : Promise.resolve(null)
+
+      Promise.all([
+        getLyrics(info.title, info.artist),
+        fetchColor
+      ]).then(([lyrics, color]) => {
+        currentLyrics = lyrics
+        currentSongInfo.albumColor = color
+        
+        if (lyricsWindow) {
+          lyricsWindow.webContents.send('lyrics:loaded', lyrics)
+          // Always re-send song info so renderer picks up color (or null)
+          lyricsWindow.webContents.send('song:changed', currentSongInfo)
+        }
+      })
     }
   })
 }

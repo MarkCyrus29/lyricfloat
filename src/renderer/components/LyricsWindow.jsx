@@ -21,6 +21,19 @@ export default function LyricsWindow() {
   const [localOpacity, setLocalOpacity] = useState(settings.opacity ?? 0.92);
   const isTransparent = bgColor === 'transparent';
 
+  const bgMode = settings.bgMode || 'album';
+
+  const computedBg = useMemo(() => {
+    if (isTransparent) return "transparent";
+    if (bgMode === 'album' && song?.albumColor) {
+      return song.albumColor.replace('rgb', 'rgba').replace(')', `, ${localOpacity})`);
+    }
+    if (bgColor.startsWith('rgba')) {
+      return bgColor.replace(/[\d.]+\)$/, `${localOpacity})`);
+    }
+    return bgColor;
+  }, [isTransparent, bgMode, song?.albumColor, localOpacity, bgColor]);
+
   // Listen for cursor enter/leave via IPC from main process cursor tracking
   useEffect(() => {
     const unsubEnter = window.electronAPI?.onMouseEnter(() =>
@@ -107,7 +120,7 @@ export default function LyricsWindow() {
     return (
       <div
         className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
-        style={{ background: bgColor }}
+        style={{ background: computedBg }}
       >
         <button onClick={() => window.electronAPI?.closeApp()} className="no-drag absolute top-4 right-4 text-white/50 hover:text-white z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors" title="Close App">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -141,7 +154,7 @@ export default function LyricsWindow() {
     return (
       <div
         className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
-        style={{ background: bgColor }}
+        style={{ background: computedBg }}
       >
         <button onClick={() => window.electronAPI?.closeApp()} className="no-drag absolute top-4 right-4 text-white/50 hover:text-white z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors" title="Close App">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -174,7 +187,7 @@ export default function LyricsWindow() {
     return (
       <div
         className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
-        style={{ background: bgColor }}
+        style={{ background: computedBg }}
       >
         <button onClick={() => window.electronAPI?.closeApp()} className="no-drag absolute top-4 right-4 text-white/50 hover:text-white z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors" title="Close App">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -203,8 +216,8 @@ export default function LyricsWindow() {
 
   return (
     <div
-      className="drag w-full h-full flex flex-col rounded-2xl relative overflow-hidden"
-      style={{ background: bgColor }}
+      className="drag w-full h-full flex flex-col rounded-2xl relative overflow-hidden transition-colors duration-1000"
+      style={{ background: computedBg }}
     >
       {/* ---- Drag handle for unsynced (scroll area is no-drag) ---- */}
       {!lyrics.synced && <div className="drag h-12 flex-shrink-0" />}
@@ -327,9 +340,10 @@ export default function LyricsWindow() {
 
       {/* Synced indicator */}
       {!lyrics.synced && (
-        <div className="absolute bottom-3 right-3 text-white/30 text-xs flex items-center gap-1 flex-col bg-black/10 backdrop-blur-sm p-2  rounded-lg">
+        <div className="absolute bottom-3 right-3 text-white/30 text-xs flex items-center gap-0 flex-col bg-black/10 backdrop-blur-sm p-2  rounded-lg">
           <TriangleAlert className="text-amber-500 opacity-80" /> 
-          <p className="text-amber-500 text-xs opacity-80" >Unsynced lyrics</p>
+          <p className="text-amber-500 text-xs opacity-80 mt-1" >Unsynced lyrics</p>
+          <p className="text-white/30 text-xs opacity-80">you can scroll</p>
         </div>
       )}
     </div>

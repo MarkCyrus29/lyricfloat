@@ -12,7 +12,8 @@ export function AppProvider({ children }) {
     hideWhenPaused: false,
     fontSize: 'medium',
     opacity: 0.92,
-    bgColor: 'rgba(18,18,18,0.92)'
+    bgColor: 'rgba(18,18,18,0.92)',
+    bgMode: 'album'
   })
 
   // Ref for the high-frequency interpolated position to prevent React render thrashing
@@ -24,7 +25,7 @@ export function AppProvider({ children }) {
       const api = window.electronAPI
       if (!api) return
 
-      const keys = ['alwaysOnTop', 'hideWhenPaused', 'fontSize', 'opacity', 'bgColor']
+      const keys = ['alwaysOnTop', 'hideWhenPaused', 'fontSize', 'opacity', 'bgColor', 'bgMode']
       const loaded = {}
       for (const key of keys) {
         const val = await api.getSetting(key)
@@ -50,9 +51,16 @@ export function AppProvider({ children }) {
 
     unsubs.push(
       api.onSongChanged((data) => {
-        setSong(data)
-        setLyrics(null)
-        setLyricsLoading(true)
+        setSong(prev => {
+          const changed = !prev || prev.title !== data.title || prev.artist !== data.artist
+          if (changed) {
+            setLyrics(null)
+            setLyricsLoading(true)
+          }
+          // Always merge albumColor from incoming data, but clear it on song change
+          // until main sends the updated color
+          return changed ? { ...data, albumColor: data.albumColor || null } : { ...prev, albumColor: data.albumColor ?? prev.albumColor }
+        })
       })
     )
 
@@ -79,10 +87,13 @@ export function AppProvider({ children }) {
         // Force recovery if we somehow missed the song:changed event
         setSong((current) => {
           if (!current && data.title) {
-            // Un-hide the "Play a song to see lyrics" prompt
+            setLyrics(null)
+            setLyricsLoading(true)
             return { title: data.title, artist: data.artist, isPlaying: data.isPlaying }
           }
           if (current && (current.title !== data.title || current.artist !== data.artist)) {
+            setLyrics(null)
+            setLyricsLoading(true)
             return { title: data.title, artist: data.artist, isPlaying: data.isPlaying }
           }
           return current

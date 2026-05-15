@@ -13,6 +13,7 @@ export default function SettingsWindow() {
   const [fontSize, setFontSize] = useState('medium')
   const [opacity, setOpacity] = useState(0.92)
   const [bgColor, setBgColor] = useState('rgba(18,18,18,0.92)')
+  const [bgMode, setBgMode] = useState('album')
   const [loaded, setLoaded] = useState(false)
 
   const originalSettings = useRef({})
@@ -28,19 +29,22 @@ export default function SettingsWindow() {
       const fs = await api.getSetting('fontSize')
       const op = await api.getSetting('opacity')
       const bg = await api.getSetting('bgColor')
+      const bm = await api.getSetting('bgMode')
 
       if (aot !== undefined) setAlwaysOnTop(aot)
       if (hwp !== undefined) setHideWhenPaused(hwp)
       if (fs !== undefined) setFontSize(fs)
       if (op !== undefined) setOpacity(op)
       if (bg !== undefined) setBgColor(bg)
+      if (bm !== undefined) setBgMode(bm)
 
       originalSettings.current = {
         alwaysOnTop: aot ?? true,
         hideWhenPaused: hwp ?? false,
         fontSize: fs ?? 'medium',
         opacity: op ?? 0.92,
-        bgColor: bg ?? 'rgba(18,18,18,0.92)'
+        bgColor: bg ?? 'rgba(18,18,18,0.92)',
+        bgMode: bm ?? 'album'
       }
 
       setLoaded(true)
@@ -87,6 +91,11 @@ export default function SettingsWindow() {
     if (window.electronAPI) await window.electronAPI.previewSetting('bgColor', val);
   }
 
+  const handleBgMode = async (mode) => {
+    setBgMode(mode)
+    if (window.electronAPI) await window.electronAPI.previewSetting('bgMode', mode)
+  }
+
   const getHexColor = (rgba) => {
     if (!rgba || rgba === 'transparent') return '#121212';
     const match = rgba.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
@@ -103,7 +112,8 @@ export default function SettingsWindow() {
       hideWhenPaused !== originalSettings.current.hideWhenPaused ||
       fontSize !== originalSettings.current.fontSize ||
       opacity !== originalSettings.current.opacity ||
-      bgColor !== originalSettings.current.bgColor
+      bgColor !== originalSettings.current.bgColor ||
+      bgMode !== originalSettings.current.bgMode
     )
   }
 
@@ -114,7 +124,8 @@ export default function SettingsWindow() {
         hideWhenPaused,
         fontSize,
         opacity,
-        bgColor
+        bgColor,
+        bgMode
       })
     }
   }
@@ -230,11 +241,41 @@ export default function SettingsWindow() {
           />
         </div>
 
+        {/* Background Theme */}
+        <div>
+          <p className="text-sm font-medium mb-1">Background Theme</p>
+          <p className="text-xs text-white/40 mb-3">Choose how the background color is determined</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => handleBgMode('album')}
+              className={`no-drag px-3 py-2.5 rounded-lg text-sm font-medium transition-all flex flex-col items-center gap-0
+                ${bgMode === 'album'
+                  ? 'bg-green-500 text-black'
+                  : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
+                }`}
+            >
+              <span>Album Art</span>
+              <span className={`text-[10px] ${bgMode === 'album' ? 'text-black/60' : 'text-white/30'}`}>Color from cover</span>
+            </button>
+            <button
+              onClick={() => handleBgMode('classic')}
+              className={`no-drag px-3 py-2.5 rounded-lg text-sm font-medium transition-all flex flex-col items-center gap-0
+                ${bgMode === 'classic'
+                  ? 'bg-green-500 text-black'
+                  : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'
+                }`}
+            >
+              <span>Classic</span>
+              <span className={`text-[10px] ${bgMode === 'classic' ? 'text-black/60' : 'text-white/30'}`}>Plain dark</span>
+            </button>
+          </div>
+        </div>
+
         {/* Background Color */}
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium">Background Color</p>
-            <p className="text-xs text-white/40">Set the background color of the lyrics window</p>
+            <p className="text-xs text-white/40">{bgMode === 'classic' ? 'Set the background color' : 'Fallback color when album art is unavailable'}</p>
           </div>
           <div className="flex items-center gap-2">
             <label className="cursor-pointer">
@@ -259,7 +300,7 @@ export default function SettingsWindow() {
 
         {/* About */}
         <div className="text-center text-white/30 text-xs space-y-1">
-          <p className="text-white/50 font-medium">LyricFloat v1.0.3</p>
+          <p className="text-white/50 font-medium">LyricFloat v1.1.0</p>
           <p>Lyrics powered by LRCLIB</p>
           <p>Made by <span onClick={() => window.electronAPI.openExternal('https://markcyruss.com')} className="text-green-500 hover:text-green-400 underline underline-offset-2 cursor-pointer">markcyruss.com</span></p>
         </div>

@@ -37,6 +37,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('settings:changed', handler)
   },
 
+  /* ---- Mouse tracking (for hover detection over drag regions) ---- */
+  onMouseEnter: (cb) => {
+    const handler = () => cb()
+    ipcRenderer.on('window:mouse-enter', handler)
+    return () => ipcRenderer.removeListener('window:mouse-enter', handler)
+  },
+  onMouseLeave: (cb) => {
+    const handler = () => cb()
+    ipcRenderer.on('window:mouse-leave', handler)
+    return () => ipcRenderer.removeListener('window:mouse-leave', handler)
+  },
+
+  /* ---- External links ---- */
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
   /* ---- Cleanup ---- */
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
 
