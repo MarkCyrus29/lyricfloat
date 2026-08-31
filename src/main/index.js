@@ -4,6 +4,8 @@ import fs from 'fs'
 import Store from 'electron-store'
 import { startSMTCBridge, stopSMTCBridge } from './powerShellBridge.js'
 import { getLyrics, getAlbumColor } from './lyricsAPI.js'
+import { getTextColorForBackground } from './colorUtils.js'
+import { cleanTitleInfo } from './titleCleaner.js'
 
 const isDev = !app.isPackaged
 const store = new Store({
@@ -27,18 +29,83 @@ let currentSongInfo = null
 let currentLyrics = null
 
 /* ------------------------------------------------------------------ */
+/*  Display / bounds utilities                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Returns true if the rectangle {x, y, width, height} overlaps at least
+ * one of the currently connected displays' work areas by at least 1 pixel.
+ */
+function boundsOnScreen(bounds) {
+  const displays = screen.getAllDisplays()
+  return displays.some((d) => {
+    const wa = d.workArea
+    return (
+      bounds.x < wa.x + wa.width &&
+      bounds.x + bounds.width > wa.x &&
+      bounds.y < wa.y + wa.height &&
+      bounds.y + bounds.height > wa.y
+    )
+  })
+}
+
+/**
+ * Validates saved window bounds against current displays.
+ * If the saved position is off-screen, returns centered coords on the primary
+ * display and persists the corrected position to the store so it self-heals.
+ *
+ * @param {{ width: number, height: number }} size
+ * @param {{ x: number, y: number } | null} pos
+ * @returns {{ x: number | undefined, y: number | undefined }}
+ */
+function validateAndGetPosition(size, pos) {
+  if (!pos) return { x: undefined, y: undefined }
+
+  const candidate = { x: pos.x, y: pos.y, width: size.width, height: size.height }
+  if (boundsOnScreen(candidate)) {
+    return { x: pos.x, y: pos.y }
+  }
+
+  // Saved position is off-screen — fall back to primary display centre
+  console.log('[LyricFloat] Saved window position is off-screen; resetting to primary display.')
+  const wa = screen.getPrimaryDisplay().workArea
+  const safeX = Math.round(wa.x + (wa.width - size.width) / 2)
+  const safeY = Math.round(wa.y + (wa.height - size.height) / 2)
+  store.set('lyricsPosition', { x: safeX, y: safeY })
+  return { x: safeX, y: safeY }
+}
+
+/**
+ * If lyricsWindow is currently positioned off all connected displays,
+ * move it to the centre of the primary display.
+ */
+function ensureLyricsWindowOnScreen() {
+  if (!lyricsWindow || lyricsWindow.isDestroyed()) return
+  const b = lyricsWindow.getBounds()
+  if (boundsOnScreen(b)) return
+
+  console.log('[LyricFloat] Display removed — repositioning lyrics window to primary display.')
+  const wa = screen.getPrimaryDisplay().workArea
+  const newX = Math.round(wa.x + (wa.width - b.width) / 2)
+  const newY = Math.round(wa.y + (wa.height - b.height) / 2)
+  lyricsWindow.setPosition(newX, newY)
+  store.set('lyricsPosition', { x: newX, y: newY })
+}
+
+/* ------------------------------------------------------------------ */
 /*  Window creation                                                   */
 /* ------------------------------------------------------------------ */
 function createLyricsWindow() {
   const bounds = store.get('lyricsBounds', { width: 420, height: 600 })
   const savedPos = store.get('lyricsPosition', null)
+  const safePos = validateAndGetPosition(bounds, savedPos)
 
   lyricsWindow = new BrowserWindow({
     width: bounds.width,
     height: bounds.height,
     minWidth: 280,
-    x: savedPos?.x,
-    y: savedPos?.y,
+    x: safePos.x,
+    y: safePos.y,
     frame: false,
     transparent: true,
     alwaysOnTop: store.get('alwaysOnTop', true),
@@ -307,20 +374,23 @@ function startSongDetection() {
         title: info.title,
         artist: info.artist,
         isPlaying: info.isPlaying,
-        albumColor: null
+        albumColor: null,
+        textColor: 'white'
       }
       lyricsWindow.webContents.send('song:changed', currentSongInfo)
 
       // Fetch lyrics and album color in parallel
       const bgMode = store.get('bgMode', 'album')
-      const fetchColor = bgMode === 'album' ? getAlbumColor(info.title, info.artist) : Promise.resolve(null)
+      const { cleanTitle, cleanArtist } = cleanTitleInfo(info.title, info.artist)
+      const fetchColor = bgMode === 'album' ? getAlbumColor(cleanTitle, cleanArtist) : Promise.resolve(null)
 
       Promise.all([
-        getLyrics(info.title, info.artist),
+        getLyrics(cleanTitle, cleanArtist),
         fetchColor
       ]).then(([lyrics, color]) => {
         currentLyrics = lyrics
         currentSongInfo.albumColor = color
+        currentSongInfo.textColor = getTextColorForBackground(color)
         
         if (lyricsWindow) {
           lyricsWindow.webContents.send('lyrics:loaded', lyrics)
@@ -343,6 +413,11 @@ app.whenReady().then(() => {
   if (lyricsWindow) {
     startSongDetection()
   }
+
+  // Live monitor-disconnect handling: reposition the lyrics window if its
+  // current display is unplugged while the app is running.
+  screen.on('display-removed', () => ensureLyricsWindowOnScreen())
+  screen.on('display-metrics-changed', () => ensureLyricsWindowOnScreen())
 
   app.on('activate', () => {
     if (!lyricsWindow) createLyricsWindow()

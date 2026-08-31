@@ -23,6 +23,12 @@ export default function LyricsWindow() {
 
   const bgMode = settings.bgMode || 'album';
 
+  const useDarkText = !isTransparent && bgMode === 'album' && song?.textColor === 'black';
+  const tColors = useDarkText
+    ? { base: 'text-black', hover: 'hover:text-black', o70: 'text-black/70', o60: 'text-black/60', o50: 'text-black/50', o40: 'text-black/40', o30: 'text-black/30' }
+    : { base: 'text-white', hover: 'hover:text-white', o70: 'text-white/70', o60: 'text-white/60', o50: 'text-white/50', o40: 'text-white/40', o30: 'text-white/30' };
+
+
   const computedBg = useMemo(() => {
     if (isTransparent) return "transparent";
     if (bgMode === 'album' && song?.albumColor) {
@@ -122,7 +128,7 @@ export default function LyricsWindow() {
         className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
         style={{ background: computedBg }}
       >
-        <button onClick={() => window.electronAPI?.closeApp()} className="no-drag absolute top-4 right-4 text-white/50 hover:text-white z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors" title="Close App">
+        <button onClick={() => window.electronAPI?.closeApp()} className={`no-drag absolute top-4 right-4 ${tColors.o50} ${tColors.hover} z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors`} title="Close App">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
         </button>
         <div
@@ -138,10 +144,10 @@ export default function LyricsWindow() {
           }
         >
           <div className="text-4xl mb-4">🎵</div>
-          <p className="text-white/70 text-lg font-medium">
+          <p className={`${tColors.o70} text-lg font-medium`}>
             Play a song to see lyrics
           </p>
-          <p className="text-white/40 text-sm mt-2">
+          <p className={`${tColors.o40} text-sm mt-2`}>
             LyricFloat will auto-detect your music
           </p>
         </div>
@@ -156,7 +162,7 @@ export default function LyricsWindow() {
         className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
         style={{ background: computedBg }}
       >
-        <button onClick={() => window.electronAPI?.closeApp()} className="no-drag absolute top-4 right-4 text-white/50 hover:text-white z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors" title="Close App">
+        <button onClick={() => window.electronAPI?.closeApp()} className={`no-drag absolute top-4 right-4 ${tColors.o50} ${tColors.hover} z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors`} title="Close App">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
         </button>
         <div
@@ -171,12 +177,12 @@ export default function LyricsWindow() {
               : {}
           }
         >
-          <Search className="animate-pulse text-4xl mb-4 text-white" />
-          <p className="text-white/70 text-lg font-medium">
+          <Search className={`animate-pulse text-4xl mb-4 ${tColors.base}`} />
+          <p className={`${tColors.o70} text-lg font-medium`}>
             Looking up lyrics for
           </p>
-          <p className="text-white text-xl font-semibold mt-1">{song.title}</p>
-          <p className="text-white/50 text-sm mt-1">{song.artist}</p>
+          <p className={`${tColors.base} text-xl font-semibold mt-1`}>{song.title}</p>
+          <p className={`${tColors.o50} text-sm mt-1`}>{song.artist}</p>
         </div>
       </div>
     );
@@ -189,7 +195,7 @@ export default function LyricsWindow() {
         className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
         style={{ background: computedBg }}
       >
-        <button onClick={() => window.electronAPI?.closeApp()} className="no-drag absolute top-4 right-4 text-white/50 hover:text-white z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors" title="Close App">
+        <button onClick={() => window.electronAPI?.closeApp()} className={`no-drag absolute top-4 right-4 ${tColors.o50} ${tColors.hover} z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors`} title="Close App">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
         </button>
         <div
@@ -204,9 +210,9 @@ export default function LyricsWindow() {
               : {}
           }
         >
-          <HeartCrack className="animate-bounce text-4xl mb-4 text-white" />
-          <p className="text-white/70 text-lg font-medium">No lyrics found</p>
-          <p className="text-white text-base mt-1">
+          <HeartCrack className={`animate-bounce text-4xl mb-4 ${tColors.base}`} />
+          <p className={`${tColors.o70} text-lg font-medium`}>No lyrics found</p>
+          <p className={`${tColors.base} text-base mt-1`}>
             {song.title} — {song.artist}
           </p>
         </div>
@@ -229,9 +235,9 @@ export default function LyricsWindow() {
           const isPast = i < activeLine;
           const isUpcoming = i > activeLine;
 
-          let colorClass = "text-white/50";
-          if (isActive) colorClass = "text-white";
-          if (isPast) colorClass = "text-white/30";
+          let colorClass = tColors.o50;
+          if (isActive) colorClass = tColors.base;
+          if (isPast) colorClass = tColors.o30;
 
           let sizeClass = fontSize.inactive;
           if (isActive) sizeClass = fontSize.active;
@@ -280,16 +286,16 @@ export default function LyricsWindow() {
       >
         {/* Song info */}
         <div className="flex-1 min-w-[120px]">
-          <p className="text-white text-sm font-semibold truncate">
+          <p className={`${tColors.base} text-sm font-semibold truncate`}>
             {song.title}
           </p>
-          <p className="text-white/60 text-xs truncate">{song.artist}</p>
+          <p className={`${tColors.o60} text-xs truncate`}>{song.artist}</p>
         </div>
 
         {/* Clear / Transparent toggle */}
         <button
           onClick={toggleTransparent}
-          className="no-drag flex-shrink-0 text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white font-medium transition-colors"
+          className={`no-drag flex-shrink-0 text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 ${tColors.base} font-medium transition-colors`}
           title="Toggle transparent background"
         >
           {isTransparent ? "FILL" : "CLEAR"}
@@ -298,7 +304,7 @@ export default function LyricsWindow() {
         {/* Settings gear */}
         <button
           onClick={() => window.electronAPI?.openSettings()}
-          className="no-drag flex-shrink-0 text-white/70 hover:text-white transition-colors"
+          className={`no-drag flex-shrink-0 ${tColors.o70} ${tColors.hover} transition-colors`}
           title="Settings"
         >
           <svg
@@ -319,7 +325,7 @@ export default function LyricsWindow() {
         {/* Close */}
         <button
           onClick={() => window.electronAPI?.closeApp()}
-          className="no-drag flex-shrink-0 text-white/70 hover:text-white transition-colors"
+          className={`no-drag flex-shrink-0 ${tColors.o70} ${tColors.hover} transition-colors`}
           title="Close App"
         >
           <svg
@@ -340,10 +346,10 @@ export default function LyricsWindow() {
 
       {/* Synced indicator */}
       {!lyrics.synced && (
-        <div className="absolute bottom-3 right-3 text-white/30 text-xs flex items-center gap-0 flex-col bg-black/10 backdrop-blur-sm p-2  rounded-lg">
+        <div className={`absolute bottom-3 right-3 ${tColors.o30} text-xs flex items-center gap-0 flex-col bg-black/10 backdrop-blur-sm p-2  rounded-lg`}>
           <TriangleAlert className="text-amber-500 opacity-80" /> 
           <p className="text-amber-500 text-xs opacity-80 mt-1" >Unsynced lyrics</p>
-          <p className="text-white/30 text-xs opacity-80">you can scroll</p>
+          <p className={`${tColors.o30} text-xs opacity-80`}>you can scroll</p>
         </div>
       )}
     </div>

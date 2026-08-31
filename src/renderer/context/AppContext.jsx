@@ -57,9 +57,11 @@ export function AppProvider({ children }) {
             setLyrics(null)
             setLyricsLoading(true)
           }
-          // Always merge albumColor from incoming data, but clear it on song change
+          // Always merge albumColor and textColor from incoming data, but clear them on song change
           // until main sends the updated color
-          return changed ? { ...data, albumColor: data.albumColor || null } : { ...prev, albumColor: data.albumColor ?? prev.albumColor }
+          return changed 
+            ? { ...data, albumColor: data.albumColor || null, textColor: data.textColor || 'white' } 
+            : { ...prev, albumColor: data.albumColor ?? prev.albumColor, textColor: data.textColor ?? prev.textColor }
         })
       })
     )
