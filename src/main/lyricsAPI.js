@@ -1,4 +1,4 @@
-import { net } from 'electron'
+import { app } from 'electron'
 
 /**
  * Parse LRC-format lyrics into structured lines.
@@ -71,7 +71,7 @@ export async function getLyrics(title, artist) {
 
   try {
     const response = await fetch(url, {
-      headers: { 'User-Agent': 'LyricFloat v1.1.1 (https://github.com/lyricfloat)' }
+      headers: { 'User-Agent': `LyricFloat/${app.getVersion()} (https://github.com/MarkCyrus29/lyricfloat)` }
     })
 
     if (!response.ok) {
