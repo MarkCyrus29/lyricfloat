@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { DEFAULT_SETTINGS } from '../context/defaults.js'
 
 const FONT_OPTIONS = [
   { value: 'small', label: 'Small' },
@@ -8,43 +9,35 @@ const FONT_OPTIONS = [
 ]
 
 export default function SettingsWindow() {
-  const [alwaysOnTop, setAlwaysOnTop] = useState(true)
-  const [hideWhenPaused, setHideWhenPaused] = useState(false)
-  const [fontSize, setFontSize] = useState('medium')
-  const [opacity, setOpacity] = useState(0.92)
-  const [bgColor, setBgColor] = useState('rgba(18,18,18,0.92)')
-  const [bgMode, setBgMode] = useState('album')
+  const [alwaysOnTop, setAlwaysOnTop] = useState(DEFAULT_SETTINGS.alwaysOnTop)
+  const [hideWhenPaused, setHideWhenPaused] = useState(DEFAULT_SETTINGS.hideWhenPaused)
+  const [fontSize, setFontSize] = useState(DEFAULT_SETTINGS.fontSize)
+  const [opacity, setOpacity] = useState(DEFAULT_SETTINGS.opacity)
+  const [bgColor, setBgColor] = useState(DEFAULT_SETTINGS.bgColor)
+  const [bgMode, setBgMode] = useState(DEFAULT_SETTINGS.bgMode)
   const [loaded, setLoaded] = useState(false)
 
-  const originalSettings = useRef({})
+  const originalSettings = useRef({ ...DEFAULT_SETTINGS })
 
   // Load current settings
   useEffect(() => {
     async function load() {
       const api = window.electronAPI
-      if (!api) return
+      if (!api?.getAllSettings) return
 
-      const aot = await api.getSetting('alwaysOnTop')
-      const hwp = await api.getSetting('hideWhenPaused')
-      const fs = await api.getSetting('fontSize')
-      const op = await api.getSetting('opacity')
-      const bg = await api.getSetting('bgColor')
-      const bm = await api.getSetting('bgMode')
+      const s = await api.getAllSettings()
+      if (s) {
+        if (s.alwaysOnTop !== undefined) setAlwaysOnTop(s.alwaysOnTop)
+        if (s.hideWhenPaused !== undefined) setHideWhenPaused(s.hideWhenPaused)
+        if (s.fontSize !== undefined) setFontSize(s.fontSize)
+        if (s.opacity !== undefined) setOpacity(s.opacity)
+        if (s.bgColor !== undefined) setBgColor(s.bgColor)
+        if (s.bgMode !== undefined) setBgMode(s.bgMode)
 
-      if (aot !== undefined) setAlwaysOnTop(aot)
-      if (hwp !== undefined) setHideWhenPaused(hwp)
-      if (fs !== undefined) setFontSize(fs)
-      if (op !== undefined) setOpacity(op)
-      if (bg !== undefined) setBgColor(bg)
-      if (bm !== undefined) setBgMode(bm)
-
-      originalSettings.current = {
-        alwaysOnTop: aot ?? true,
-        hideWhenPaused: hwp ?? false,
-        fontSize: fs ?? 'medium',
-        opacity: op ?? 0.92,
-        bgColor: bg ?? 'rgba(18,18,18,0.92)',
-        bgMode: bm ?? 'album'
+        originalSettings.current = {
+          ...DEFAULT_SETTINGS,
+          ...s
+        }
       }
 
       setLoaded(true)

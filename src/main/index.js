@@ -8,6 +8,7 @@ import { getTextColorForBackground } from './colorUtils.js'
 import { cleanTitleInfo } from './titleCleaner.js'
 
 const isDev = !app.isPackaged
+// Default settings mirror src/renderer/context/defaults.js
 const store = new Store({
   defaults: {
     alwaysOnTop: true,
@@ -260,6 +261,14 @@ function createTray() {
 /* ------------------------------------------------------------------ */
 function setupIPC() {
   ipcMain.handle('store:get', (_event, key) => store.get(key))
+  ipcMain.handle('store:get-all', () => ({
+    alwaysOnTop: store.get('alwaysOnTop'),
+    hideWhenPaused: store.get('hideWhenPaused'),
+    fontSize: store.get('fontSize'),
+    opacity: store.get('opacity'),
+    bgColor: store.get('bgColor'),
+    bgMode: store.get('bgMode')
+  }))
   ipcMain.handle('store:set', (_event, key, value) => {
     store.set(key, value)
     return true

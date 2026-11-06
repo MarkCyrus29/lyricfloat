@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import { DEFAULT_SETTINGS } from './defaults.js'
 
 const AppContext = createContext(null)
 
@@ -7,14 +8,7 @@ export function AppProvider({ children }) {
   const [playback, setPlayback] = useState({ isPlaying: false, positionMs: 0 })
   const [lyrics, setLyrics] = useState(null)
   const [lyricsLoading, setLyricsLoading] = useState(false)
-  const [settings, setSettingsState] = useState({
-    alwaysOnTop: true,
-    hideWhenPaused: false,
-    fontSize: 'medium',
-    opacity: 0.92,
-    bgColor: 'rgba(18,18,18,0.92)',
-    bgMode: 'album'
-  })
+  const [settings, setSettingsState] = useState(DEFAULT_SETTINGS)
 
   // Ref for the high-frequency interpolated position to prevent React render thrashing
   const playbackRef = useRef({ isPlaying: false, positionMs: 0, lastUpdateTime: performance.now() })
@@ -23,15 +17,12 @@ export function AppProvider({ children }) {
   useEffect(() => {
     async function loadSettings() {
       const api = window.electronAPI
-      if (!api) return
+      if (!api?.getAllSettings) return
 
-      const keys = ['alwaysOnTop', 'hideWhenPaused', 'fontSize', 'opacity', 'bgColor', 'bgMode']
-      const loaded = {}
-      for (const key of keys) {
-        const val = await api.getSetting(key)
-        if (val !== undefined && val !== null) loaded[key] = val
+      const loaded = await api.getAllSettings()
+      if (loaded) {
+        setSettingsState((prev) => ({ ...prev, ...loaded }))
       }
-      setSettingsState((prev) => ({ ...prev, ...loaded }))
     }
     loadSettings()
   }, [])

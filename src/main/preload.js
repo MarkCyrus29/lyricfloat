@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   /* ---- Settings ---- */
+  getAllSettings: () => ipcRenderer.invoke('store:get-all'),
   getSetting: (key) => ipcRenderer.invoke('store:get', key),
   setSetting: (key, value) => ipcRenderer.invoke('store:set', key, value),
   previewSetting: (key, value) => ipcRenderer.invoke('settings:preview', key, value),
