@@ -25,9 +25,6 @@ function parseLRC(lrcText) {
 }
 
 import ColorThief from 'colorthief'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { writeFileSync, unlinkSync } from 'fs'
 
 /**
  * Fetch album art from iTunes and extract dominant color.
@@ -38,7 +35,7 @@ export async function getAlbumColor(title, artist) {
     const query = encodeURIComponent(`${title} ${artist}`)
     const url = `https://itunes.apple.com/search?term=${query}&media=music&entity=song&limit=1`
     
-    const res = await fetch(url)
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
     if (!res.ok) return null
     
     const data = await res.json()
@@ -48,20 +45,13 @@ export async function getAlbumColor(title, artist) {
     if (!artworkUrl) return null
 
     // Fetch image
-    const imgRes = await fetch(artworkUrl)
+    const imgRes = await fetch(artworkUrl, { signal: AbortSignal.timeout(5000) })
     if (!imgRes.ok) return null
     const arrayBuffer = await imgRes.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
     
-    // Save to temp file
-    const tmpPath = join(tmpdir(), `lyricfloat_art_${Date.now()}.jpg`)
-    writeFileSync(tmpPath, buffer)
-    
-    // Extract color
-    const color = await ColorThief.getColor(tmpPath)
-    
-    // Cleanup
-    try { unlinkSync(tmpPath) } catch(e) {}
+    // Extract color directly from buffer
+    const color = await ColorThief.getColor(buffer)
     
     if (color && color.length === 3) {
       return `rgb(${color[0]}, ${color[1]}, ${color[2]})`
