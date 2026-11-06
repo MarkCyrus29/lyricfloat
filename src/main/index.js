@@ -3,7 +3,8 @@ import { join } from 'path'
 import fs from 'fs'
 import Store from 'electron-store'
 import { startMediaBridge, stopMediaBridge } from './mediaBridge.js'
-import { getLyrics, getAlbumColor } from './lyricsAPI.js'
+import { getAlbumColor } from './lyricsAPI.js'
+import { getLyricsForSong } from './lyrics/index.js'
 import { getTextColorForBackground } from './colorUtils.js'
 import { buildLookupCandidates } from './titleCleaner.js'
 import { classifySource } from './sourceProfiles.js'
@@ -32,6 +33,7 @@ let currentLyrics = null
 let lookupSeq = 0
 let lastSentPlayback = null
 let lastIsPlaying = null
+let songAbortController = null
 
 /* ------------------------------------------------------------------ */
 /*  Display / bounds utilities                                        */
@@ -416,6 +418,12 @@ function startSongDetection() {
     // Only fetch lyrics when the song actually changes
     if (info.songChanged) {
       const seq = ++lookupSeq
+      if (songAbortController) {
+        songAbortController.abort()
+      }
+      songAbortController = new AbortController()
+      const signal = songAbortController.signal
+
       // Immediately clear old data so renderer shows loading state
       currentLyrics = null
       const songInfo = {
@@ -435,21 +443,8 @@ function startSongDetection() {
       const firstCand = candidates[0] || { title: info.title, artist: info.artist }
       const fetchColor = bgMode === 'album' ? getAlbumColor(firstCand.title, firstCand.artist) : Promise.resolve(null)
 
-      const fetchLyricsIterative = async () => {
-        for (const c of candidates) {
-          if (seq !== lookupSeq) return null
-          try {
-            const res = await getLyrics(c.title, c.artist)
-            if (res && res.lines && res.lines.length > 0) {
-              return res
-            }
-          } catch (e) {}
-        }
-        return { synced: false, lines: [] }
-      }
-
       Promise.all([
-        fetchLyricsIterative(),
+        getLyricsForSong(info, candidates, { signal }),
         fetchColor
       ]).then(([lyrics, color]) => {
         if (seq !== lookupSeq || !lyrics) return
@@ -466,7 +461,7 @@ function startSongDetection() {
       }).catch((err) => {
         console.error('[LyricFloat] Error fetching lyrics or color:', err)
         if (seq !== lookupSeq) return
-        const emptyLyrics = { synced: false, lines: [] }
+        const emptyLyrics = { synced: false, lines: [], source: null, instrumental: false }
         currentLyrics = emptyLyrics
         if (lyricsWindow) {
           lyricsWindow.webContents.send('lyrics:loaded', emptyLyrics)
