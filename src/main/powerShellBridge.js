@@ -6,6 +6,12 @@ import { tmpdir } from 'os'
 let psChild = null
 let lastSongKey = ''
 
+let fallbackLines = []
+let lastFallbackSource = null
+let pendingFallbackKey = null
+let pendingFallbackCount = 0
+let activeFallbackKey = ''
+
 /* ------------------------------------------------------------------ */
 /*  Primary: SMTC via WinRT + Fallback Title Scraping (Persistent)    */
 /* ------------------------------------------------------------------ */
@@ -33,6 +39,7 @@ while ($true) {
         foreach ($p in $procs) {
             Write-Output "FALLBACK_DATA|||$($p.ProcessName)|||$($p.MainWindowTitle)"
         }
+        Write-Output "FALLBACK_END|||"
         [Console]::Out.Flush()
         Start-Sleep -Milliseconds 1000
         continue
@@ -105,6 +112,10 @@ export function startSMTCBridge(onSongChanged) {
       
       // Handle SMTC Data
       if (line.startsWith('SMTC_DATA|||')) {
+        activeFallbackKey = ''
+        pendingFallbackKey = null
+        pendingFallbackCount = 0
+        fallbackLines = []
         const parts = line.split('|||')
         if (parts.length < 5) continue
         const info = {
@@ -119,37 +130,87 @@ export function startSMTCBridge(onSongChanged) {
       
       // Handle Fallback Title Data
       if (line.startsWith('FALLBACK_DATA|||')) {
-        const parts = line.split('|||')
-        const proc = parts[1]
-        const windowTitle = parts.slice(2).join('|||').trim()
+        fallbackLines.push(line)
+        continue
+      }
 
-        let info = null
-        // Spotify: "Artist - Title" or "Title - Artist" or "Spotify Premium"
-        if (proc && proc.toLowerCase().includes('spotify') && windowTitle.includes(' - ')) {
-          const dashIdx = windowTitle.indexOf(' - ')
-          info = {
-            title: windowTitle.slice(dashIdx + 3).trim(),
-            artist: windowTitle.slice(0, dashIdx).trim(),
-            isPlaying: true,
-            positionMs: 0
-          }
-        }
-        // Browser: often "Title - YouTube" or "Song • Artist" etc.
-        else if (windowTitle.includes(' - YouTube')) {
-          const raw = windowTitle.replace(' - YouTube', '').trim()
-          const dashIdx = raw.lastIndexOf(' - ')
-          if (dashIdx > 0) {
+      if (line.startsWith('FALLBACK_END|||')) {
+        const candidates = []
+        for (const raw of fallbackLines) {
+          const parts = raw.split('|||')
+          const proc = parts[1] || ''
+          const windowTitle = parts.slice(2).join('|||').trim()
+
+          let info = null
+          const procLower = proc.toLowerCase()
+          // Spotify: "Artist - Title" or "Title - Artist" or "Spotify Premium"
+          if (procLower.includes('spotify') && windowTitle.includes(' - ')) {
+            const dashIdx = windowTitle.indexOf(' - ')
             info = {
-              title: raw.slice(0, dashIdx).trim(),
-              artist: raw.slice(dashIdx + 3).trim(),
+              title: windowTitle.slice(dashIdx + 3).trim(),
+              artist: windowTitle.slice(0, dashIdx).trim(),
               isPlaying: true,
               positionMs: 0
             }
           }
-        }
+          // Browser: often "Title - YouTube" or "Song • Artist" etc.
+          else if (windowTitle.includes(' - YouTube')) {
+            const raw = windowTitle.replace(' - YouTube', '').trim()
+            const dashIdx = raw.lastIndexOf(' - ')
+            if (dashIdx > 0) {
+              info = {
+                title: raw.slice(0, dashIdx).trim(),
+                artist: raw.slice(dashIdx + 3).trim(),
+                isPlaying: true,
+                positionMs: 0
+              }
+            }
+          }
 
-        if (info) {
-          handleNewInfo(info, onSongChanged)
+          if (info) {
+            candidates.push({ info, proc: procLower })
+          }
+        }
+        fallbackLines = []
+
+        if (candidates.length > 0) {
+          let chosen = null
+          if (lastFallbackSource) {
+            chosen = candidates.find(c => c.proc.includes(lastFallbackSource))
+          }
+          if (!chosen) {
+            const priority = ['spotify', 'chrome', 'msedge', 'firefox']
+            for (const p of priority) {
+              chosen = candidates.find(c => c.proc.includes(p))
+              if (chosen) break
+            }
+          }
+          if (!chosen) {
+            chosen = candidates[0]
+          }
+
+          lastFallbackSource = chosen.proc
+          const chosenInfo = chosen.info
+          const key = `${chosenInfo.title}|${chosenInfo.artist}`
+
+          if (key === activeFallbackKey) {
+            pendingFallbackKey = null
+            pendingFallbackCount = 0
+            handleNewInfo(chosenInfo, onSongChanged)
+          } else {
+            if (key === pendingFallbackKey) {
+              pendingFallbackCount++
+              if (pendingFallbackCount >= 2) {
+                activeFallbackKey = key
+                pendingFallbackKey = null
+                pendingFallbackCount = 0
+                handleNewInfo(chosenInfo, onSongChanged)
+              }
+            } else {
+              pendingFallbackKey = key
+              pendingFallbackCount = 1
+            }
+          }
         }
         continue
       }
@@ -171,4 +232,9 @@ export function stopSMTCBridge() {
     psChild = null
   }
   lastSongKey = ''
+  fallbackLines = []
+  lastFallbackSource = null
+  pendingFallbackKey = null
+  pendingFallbackCount = 0
+  activeFallbackKey = ''
 }
