@@ -257,11 +257,16 @@ function createTray() {
   })
 }
 
+const ALLOWED_SETTINGS_KEYS = new Set(['alwaysOnTop', 'hideWhenPaused', 'fontSize', 'opacity', 'bgColor', 'bgMode'])
+
 /* ------------------------------------------------------------------ */
 /*  IPC Handlers                                                      */
 /* ------------------------------------------------------------------ */
 function setupIPC() {
-  ipcMain.handle('store:get', (_event, key) => store.get(key))
+  ipcMain.handle('store:get', (_event, key) => {
+    if (!ALLOWED_SETTINGS_KEYS.has(key)) return undefined
+    return store.get(key)
+  })
   ipcMain.handle('store:get-all', () => ({
     alwaysOnTop: store.get('alwaysOnTop'),
     hideWhenPaused: store.get('hideWhenPaused'),
@@ -271,18 +276,22 @@ function setupIPC() {
     bgMode: store.get('bgMode')
   }))
   ipcMain.handle('store:set', (_event, key, value) => {
+    if (!ALLOWED_SETTINGS_KEYS.has(key)) return false
     store.set(key, value)
     return true
   })
 
   ipcMain.handle('settings:preview', (_event, key, value) => {
+    if (!ALLOWED_SETTINGS_KEYS.has(key)) return false
     if (lyricsWindow) lyricsWindow.webContents.send('settings:changed', { key, value })
     if (key === 'alwaysOnTop' && lyricsWindow) lyricsWindow.setAlwaysOnTop(!!value)
     return true
   })
 
   ipcMain.handle('settings:save', (_event, settings) => {
+    if (!settings || typeof settings !== 'object') return false
     for (const [key, value] of Object.entries(settings)) {
+      if (!ALLOWED_SETTINGS_KEYS.has(key)) continue
       store.set(key, value)
       if (lyricsWindow) lyricsWindow.webContents.send('settings:changed', { key, value })
     }
@@ -360,8 +369,14 @@ function setupIPC() {
   })
 
   ipcMain.handle('open-external', (_event, url) => {
-    shell.openExternal(url)
-    return true
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol === 'https:') {
+        shell.openExternal(url)
+        return true
+      }
+    } catch (e) {}
+    return false
   })
 }
 
