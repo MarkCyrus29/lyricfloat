@@ -334,18 +334,6 @@ function setupIPC() {
     return true
   })
 
-  // Mouse forwarding for transparent window hover detection
-  ipcMain.handle('window:setIgnoreMouseEvents', (_event, ignore, options) => {
-    if (lyricsWindow) {
-      if (ignore) {
-        lyricsWindow.setIgnoreMouseEvents(true, { forward: true })
-      } else {
-        lyricsWindow.setIgnoreMouseEvents(false)
-      }
-    }
-    return true
-  })
-
   ipcMain.handle('window:closeApp', () => {
     stopMediaBridge()
     app.quit()

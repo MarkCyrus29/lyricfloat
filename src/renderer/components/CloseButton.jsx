@@ -24,3 +24,4 @@ export default function CloseButton({ className = '', size = 16, onClick }) {
     </button>
   )
 }
+

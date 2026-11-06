@@ -15,7 +15,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openSettings: () => ipcRenderer.invoke('window:openSettings'),
   closeSettings: () => ipcRenderer.invoke('window:closeSettings'),
   closeApp: () => ipcRenderer.invoke('window:closeApp'),
-  setIgnoreMouseEvents: (ignore) => ipcRenderer.invoke('window:setIgnoreMouseEvents', ignore),
 
   /* ---- Event listeners (renderer ← main) ---- */
   onSongChanged: (cb) => {

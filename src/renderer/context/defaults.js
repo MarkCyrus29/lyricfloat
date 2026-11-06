@@ -7,3 +7,4 @@ export const DEFAULT_SETTINGS = {
   bgColor: 'rgba(18,18,18,0.92)',
   bgMode: 'album'
 }
+
