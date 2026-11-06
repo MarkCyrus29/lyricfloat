@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState, useMemo } from "react";
 import { useApp } from "../context/AppContext.jsx";
 import { TriangleAlert, HeartCrack, Search } from "lucide-react";
+import StateScreen from "./StateScreen.jsx";
+import CloseButton from "./CloseButton.jsx";
 
 const FONT_SIZES = {
   small: { active: "text-base", inactive: "text-sm" },
@@ -156,99 +158,54 @@ export default function LyricsWindow() {
   // Empty state: no song
   if (!song) {
     return (
-      <div
-        className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
-        style={{ background: computedBg }}
+      <StateScreen
+        background={computedBg}
+        isTransparent={isTransparent}
+        tColors={tColors}
       >
-        <button onClick={() => window.electronAPI?.closeApp()} className={`no-drag absolute top-4 right-4 ${tColors.o50} ${tColors.hover} z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors`} title="Close App">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-        </button>
-        <div
-          className="text-center px-6 py-8 rounded-2xl"
-          style={
-            isTransparent
-              ? {
-                  backgroundColor: "rgba(0,0,0,0.35)",
-                  backdropFilter: "blur(6px)",
-                  WebkitBackdropFilter: "blur(6px)",
-                }
-              : {}
-          }
-        >
-          <div className="text-4xl mb-4">🎵</div>
-          <p className={`${tColors.o70} text-lg font-medium`}>
-            Play a song to see lyrics
-          </p>
-          <p className={`${tColors.o40} text-sm mt-2`}>
-            LyricFloat will auto-detect your music
-          </p>
-        </div>
-      </div>
+        <div className="text-4xl mb-4">🎵</div>
+        <p className={`${tColors.o70} text-lg font-medium`}>
+          Play a song to see lyrics
+        </p>
+        <p className={`${tColors.o40} text-sm mt-2`}>
+          LyricFloat will auto-detect your music
+        </p>
+      </StateScreen>
     );
   }
 
   // Loading state
   if (lyricsLoading) {
     return (
-      <div
-        className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
-        style={{ background: computedBg }}
+      <StateScreen
+        background={computedBg}
+        isTransparent={isTransparent}
+        tColors={tColors}
       >
-        <button onClick={() => window.electronAPI?.closeApp()} className={`no-drag absolute top-4 right-4 ${tColors.o50} ${tColors.hover} z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors`} title="Close App">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-        </button>
-        <div
-          className="text-center flex flex-col items-center px-6 py-8 rounded-2xl"
-          style={
-            isTransparent
-              ? {
-                  backgroundColor: "rgba(0,0,0,0.35)",
-                  backdropFilter: "blur(6px)",
-                  WebkitBackdropFilter: "blur(6px)",
-                }
-              : {}
-          }
-        >
-          <Search className={`animate-pulse text-4xl mb-4 ${tColors.base}`} />
-          <p className={`${tColors.o70} text-lg font-medium`}>
-            Looking up lyrics for
-          </p>
-          <p className={`${tColors.base} text-xl font-semibold mt-1`}>{song.title}</p>
-          <p className={`${tColors.o50} text-sm mt-1`}>{song.artist}</p>
-        </div>
-      </div>
+        <Search className={`animate-pulse text-4xl mb-4 ${tColors.base}`} />
+        <p className={`${tColors.o70} text-lg font-medium`}>
+          Looking up lyrics for
+        </p>
+        <p className={`${tColors.base} text-xl font-semibold mt-1`}>{song.title}</p>
+        <p className={`${tColors.o50} text-sm mt-1`}>{song.artist}</p>
+      </StateScreen>
     );
   }
 
   // No lyrics found
   if (!lyrics?.lines?.length) {
     return (
-      <div
-        className="drag w-full h-full flex items-center justify-center rounded-2xl relative"
-        style={{ background: computedBg }}
+      <StateScreen
+        background={computedBg}
+        isTransparent={isTransparent}
+        tColors={tColors}
       >
-        <button onClick={() => window.electronAPI?.closeApp()} className={`no-drag absolute top-4 right-4 ${tColors.o50} ${tColors.hover} z-50 p-1.5 bg-black/20 hover:bg-black/40 rounded-full transition-colors`} title="Close App">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-        </button>
-        <div
-          className="text-center flex flex-col items-center px-6 py-8 rounded-2xl"
-          style={
-            isTransparent
-              ? {
-                  backgroundColor: "rgba(0,0,0,0.35)",
-                  backdropFilter: "blur(6px)",
-                  WebkitBackdropFilter: "blur(6px)",
-                }
-              : {}
-          }
-        >
-          <HeartCrack className={`animate-bounce text-4xl mb-4 ${tColors.base}`} />
-          <p className={`${tColors.o70} text-lg font-medium`}>No lyrics found</p>
-          <p className={`${tColors.base} text-base mt-1`}>
-            {song.title} — {song.artist}
-          </p>
-        </div>
-      </div>
+        <HeartCrack className={`animate-bounce text-4xl mb-4 ${tColors.base}`} />
+        <p className={`${tColors.o70} text-lg font-medium`}>No lyrics found</p>
+        <p className={`${tColors.base} text-base mt-1`}>
+          {song.title} — {song.artist}
+        </p>
+      </StateScreen>
     );
   }
 
@@ -355,25 +312,10 @@ export default function LyricsWindow() {
         </button>
 
         {/* Close */}
-        <button
-          onClick={() => window.electronAPI?.closeApp()}
+        <CloseButton
           className={`no-drag flex-shrink-0 ${tColors.o70} ${tColors.hover} transition-colors`}
-          title="Close App"
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+          size={18}
+        />
       </div>
 
       {/* Synced indicator */}
