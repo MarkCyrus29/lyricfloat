@@ -179,6 +179,23 @@ export default function LyricsWindow() {
     );
   }
 
+  // Instrumental state
+  if (lyrics?.instrumental) {
+    return (
+      <StateScreen
+        background={computedBg}
+        isTransparent={isTransparent}
+        tColors={tColors}
+      >
+        <div className="text-4xl mb-4">🎵</div>
+        <p className={`${tColors.o70} text-lg font-medium`}>Instrumental</p>
+        <p className={`${tColors.base} text-base mt-1`}>
+          {song.title} — {song.artist}
+        </p>
+      </StateScreen>
+    );
+  }
+
   // No lyrics found
   if (!lyrics?.lines?.length) {
     return (
@@ -246,7 +263,7 @@ export default function LyricsWindow() {
                   : {}
               }
             >
-              {line.text?.replace(/\[\d+:\d+\.\d+\]/g, "").trim() || "♪"}
+              {line.text?.trim() || "♪"}
             </p>
           );
         })}
