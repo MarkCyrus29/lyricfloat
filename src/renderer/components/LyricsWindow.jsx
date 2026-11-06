@@ -35,11 +35,7 @@ export default function LyricsWindow() {
   const scrollRef = useRef(null);
   const activeRef = useRef(null);
   const [hovering, setHovering] = useState(false);
-  const [bgColor, setBgColor] = useState(
-    settings.bgColor || "rgba(18,18,18,0.92)",
-  );
-  const [localOpacity, setLocalOpacity] = useState(settings.opacity ?? 0.92);
-  const isTransparent = bgColor === 'transparent';
+  const isTransparent = settings.bgColor === 'transparent';
 
   const bgMode = settings.bgMode || 'album';
 
@@ -52,13 +48,13 @@ export default function LyricsWindow() {
   const computedBg = useMemo(() => {
     if (isTransparent) return "transparent";
     if (bgMode === 'album' && song?.albumColor) {
-      return song.albumColor.replace('rgb', 'rgba').replace(')', `, ${localOpacity})`);
+      return song.albumColor.replace('rgb', 'rgba').replace(')', `, ${settings.opacity})`);
     }
-    if (bgColor.startsWith('rgba')) {
-      return bgColor.replace(/[\d.]+\)$/, `${localOpacity})`);
+    if (settings.bgColor.startsWith('rgba')) {
+      return settings.bgColor.replace(/[\d.]+\)$/, `${settings.opacity})`);
     }
-    return bgColor;
-  }, [isTransparent, bgMode, song?.albumColor, localOpacity, bgColor]);
+    return settings.bgColor;
+  }, [isTransparent, bgMode, song?.albumColor, settings.opacity, settings.bgColor]);
 
   // Listen for cursor enter/leave via IPC from main process cursor tracking
   useEffect(() => {
@@ -73,15 +69,6 @@ export default function LyricsWindow() {
       unsubLeave?.();
     };
   }, []);
-
-  // Sync bgColor from settings
-  useEffect(() => {
-    if (settings.bgColor) setBgColor(settings.bgColor);
-  }, [settings.bgColor]);
-
-  useEffect(() => {
-    if (settings.opacity !== undefined) setLocalOpacity(settings.opacity);
-  }, [settings.opacity]);
 
   const [activeLine, setActiveLine] = useState(-1);
 
