@@ -27,6 +27,7 @@ let tray = null
 // Cache for frontend sync
 let currentSongInfo = null
 let currentLyrics = null
+let lookupSeq = 0
 
 /* ------------------------------------------------------------------ */
 /*  Display / bounds utilities                                        */
@@ -368,16 +369,18 @@ function startSongDetection() {
 
     // Only fetch lyrics when the song actually changes
     if (info.songChanged) {
+      const seq = ++lookupSeq
       // Immediately clear old data so renderer shows loading state
       currentLyrics = null
-      currentSongInfo = {
+      const songInfo = {
         title: info.title,
         artist: info.artist,
         isPlaying: info.isPlaying,
         albumColor: null,
         textColor: 'white'
       }
-      lyricsWindow.webContents.send('song:changed', currentSongInfo)
+      currentSongInfo = songInfo
+      lyricsWindow.webContents.send('song:changed', songInfo)
 
       // Fetch lyrics and album color in parallel
       const bgMode = store.get('bgMode', 'album')
@@ -388,14 +391,24 @@ function startSongDetection() {
         getLyrics(cleanTitle, cleanArtist),
         fetchColor
       ]).then(([lyrics, color]) => {
+        if (seq !== lookupSeq) return
         currentLyrics = lyrics
-        currentSongInfo.albumColor = color
-        currentSongInfo.textColor = getTextColorForBackground(color)
+        songInfo.albumColor = color
+        songInfo.textColor = getTextColorForBackground(color)
+        currentSongInfo = songInfo
         
         if (lyricsWindow) {
           lyricsWindow.webContents.send('lyrics:loaded', lyrics)
           // Always re-send song info so renderer picks up color (or null)
-          lyricsWindow.webContents.send('song:changed', currentSongInfo)
+          lyricsWindow.webContents.send('song:changed', songInfo)
+        }
+      }).catch((err) => {
+        console.error('[LyricFloat] Error fetching lyrics or color:', err)
+        if (seq !== lookupSeq) return
+        const emptyLyrics = { synced: false, lines: [] }
+        currentLyrics = emptyLyrics
+        if (lyricsWindow) {
+          lyricsWindow.webContents.send('lyrics:loaded', emptyLyrics)
         }
       })
     }
