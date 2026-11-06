@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import { writeFileSync } from 'fs'
 import { join } from 'path'
-import { tmpdir } from 'os'
+import { app } from 'electron'
 
 let psChild = null
 
@@ -19,12 +19,15 @@ const SMTC_SCRIPT = `
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 
 $null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime]
+$null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties, Windows.Media.Control, ContentType = WindowsRuntime]
 
 $async = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()
 $typeName = 'System.WindowsRuntimeSystemExtensions'
 $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.IsGenericMethod })[0]
 
 $asTask = $asTaskGeneric.MakeGenericMethod([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
+$asTask2 = $asTaskGeneric.MakeGenericMethod([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
+
 $netTask = $asTask.Invoke($null, @($async))
 $null = $netTask.Wait(-1)
 $sessionManager = $netTask.Result
@@ -45,8 +48,6 @@ while ($true) {
     }
 
     $mediaAsync = $session.TryGetMediaPropertiesAsync()
-    $asTask2Generic = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.IsGenericMethod })[0]
-    $asTask2 = $asTask2Generic.MakeGenericMethod([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
     $netTask2 = $asTask2.Invoke($null, @($mediaAsync))
     $null = $netTask2.Wait(-1)
     $mediaProps = $netTask2.Result
@@ -74,14 +75,13 @@ while ($true) {
 }
 `.trim()
 
-const smtcScriptPath = join(tmpdir(), 'lyricfloat_smtc_loop.ps1')
-
 /* ------------------------------------------------------------------ */
 /*  Public API                                                        */
 /* ------------------------------------------------------------------ */
 export function startSMTCBridge(onSongChanged) {
   stopSMTCBridge()
 
+  const smtcScriptPath = join(app.getPath('userData'), 'lyricfloat_smtc_loop.ps1')
   try {
     writeFileSync(smtcScriptPath, SMTC_SCRIPT)
   } catch (e) {}
