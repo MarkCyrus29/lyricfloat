@@ -251,7 +251,7 @@ export default function LyricsWindow() {
     ${isActive ? "font-semibold" : "font-normal"}
     ${
       isTransparent
-        ? `${isActive ? "px-4" : "px-2"} ${i === 0 ? "rounded-t-lg" : ""} ${i === lyrics.length - 1 ? "rounded-b-lg" : ""}`
+        ? `${isActive ? "px-4" : "px-2"} ${i === 0 ? "rounded-t-lg" : ""} ${i === lyrics.lines.length - 1 ? "rounded-b-lg" : ""}`
         : ""
     }`}
               style={
