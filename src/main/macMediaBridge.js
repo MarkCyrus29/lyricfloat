@@ -10,6 +10,7 @@ let pollInterval = null
 /* ------------------------------------------------------------------ */
 
 // Spotify: most reliable, has full AppleScript dictionary
+// Spotify's AppleScript "duration" is believed to be milliseconds — UNVERIFIED
 const SPOTIFY_SCRIPT = `
 tell application "System Events"
   if not (exists process "Spotify") then return "NOT_RUNNING"
@@ -18,13 +19,16 @@ tell application "Spotify"
   if player state is stopped then return "STOPPED"
   set t to name of current track
   set a to artist of current track
+  set al to album of current track
+  set d to duration of current track
   set p to player position
   set s to player state as string
-  return t & "|||" & a & "|||" & (p * 1000 as integer) & "|||" & s
+  return t & "|||" & a & "|||" & (p * 1000 as integer) & "|||" & s & "|||" & d & "|||" & al
 end tell
 `.trim()
 
 // Apple Music (Music.app)
+// Music.app's AppleScript "duration" is believed to be seconds — UNVERIFIED
 const MUSIC_SCRIPT = `
 tell application "System Events"
   if not (exists process "Music") then return "NOT_RUNNING"
@@ -33,9 +37,11 @@ tell application "Music"
   if player state is stopped then return "STOPPED"
   set t to name of current track
   set a to artist of current track
+  set al to album of current track
+  set d to duration of current track
   set p to player position
   set s to player state as string
-  return t & "|||" & a & "|||" & (p * 1000 as integer) & "|||" & s
+  return t & "|||" & a & "|||" & (p * 1000 as integer) & "|||" & s & "|||" & d & "|||" & al
 end tell
 `.trim()
 
@@ -48,7 +54,7 @@ tell application "System Events"
     if procName is in {"Google Chrome", "Safari", "Firefox", "Microsoft Edge", "Arc", "Brave Browser", "Opera"} then
       try
         set winTitle to name of front window of proc
-        set output to output & procName & "|||" & winTitle & "\\n"
+        set output to output & procName & "|||" & winTitle & "\\\\n"
       end try
     end if
   end repeat
@@ -62,7 +68,7 @@ return output
 
 async function runAppleScript(script) {
   try {
-    const { stdout } = await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, {
+    const { stdout } = await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}' `, {
       timeout: 3000,
       encoding: 'utf8'
     })
@@ -84,11 +90,14 @@ function parseBrowserTitle(procName, windowTitle) {
         title: raw.slice(0, dashIdx).trim(),
         artist: raw.slice(dashIdx + 3).trim(),
         isPlaying: true,
-        positionMs: 0
+        positionMs: 0,
+        durationMs: null,
+        sourceApp: procName,
+        album: null
       }
     }
     // Single part — treat as title with unknown artist
-    return { title: raw, artist: '', isPlaying: true, positionMs: 0 }
+    return { title: raw, artist: '', isPlaying: true, positionMs: 0, durationMs: null, sourceApp: procName, album: null }
   }
 
   // SoundCloud: "Stream Title by Artist | Listen …"
@@ -100,7 +109,10 @@ function parseBrowserTitle(procName, windowTitle) {
         title: stripped.slice(0, byIdx).trim(),
         artist: stripped.slice(byIdx + 4).trim(),
         isPlaying: true,
-        positionMs: 0
+        positionMs: 0,
+        durationMs: null,
+        sourceApp: procName,
+        album: null
       }
     }
   }
@@ -115,7 +127,10 @@ function parseBrowserTitle(procName, windowTitle) {
         title: windowTitle.slice(0, dashIdx).trim(),
         artist: possibleBrowser,
         isPlaying: true,
-        positionMs: 0
+        positionMs: 0,
+        durationMs: null,
+        sourceApp: procName,
+        album: null
       }
     }
   }
@@ -133,11 +148,16 @@ async function pollMediaInfo(onSongChanged) {
   if (spotifyResult && spotifyResult !== 'NOT_RUNNING' && spotifyResult !== 'STOPPED') {
     const parts = spotifyResult.split('|||')
     if (parts.length >= 4) {
+      // Spotify duration is believed to be in ms — UNVERIFIED
+      const durationRaw = parts.length >= 5 ? parseInt(parts[4], 10) : 0
       const info = {
         title: parts[0],
         artist: parts[1],
         positionMs: parseInt(parts[2], 10) || 0,
-        isPlaying: parts[3] === 'playing'
+        isPlaying: parts[3] === 'playing',
+        durationMs: durationRaw > 0 ? durationRaw : null,
+        sourceApp: 'Spotify',
+        album: parts.length >= 6 ? parts[5] || null : null
       }
       onSongChanged(info)
       return
@@ -149,11 +169,18 @@ async function pollMediaInfo(onSongChanged) {
   if (musicResult && musicResult !== 'NOT_RUNNING' && musicResult !== 'STOPPED') {
     const parts = musicResult.split('|||')
     if (parts.length >= 4) {
+      // Music.app duration is believed to be in seconds — UNVERIFIED
+      // Convert to ms if non-zero
+      const durationRaw = parts.length >= 5 ? parseFloat(parts[4]) : 0
+      const durationMs = durationRaw > 0 ? Math.round(durationRaw * 1000) : null
       const info = {
         title: parts[0],
         artist: parts[1],
         positionMs: parseInt(parts[2], 10) || 0,
-        isPlaying: parts[3] === 'playing'
+        isPlaying: parts[3] === 'playing',
+        durationMs,
+        sourceApp: 'Music',
+        album: parts.length >= 6 ? parts[5] || null : null
       }
       onSongChanged(info)
       return

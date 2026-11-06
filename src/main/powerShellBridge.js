@@ -22,7 +22,6 @@ $null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager,
 $null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties, Windows.Media.Control, ContentType = WindowsRuntime]
 
 $async = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()
-$typeName = 'System.WindowsRuntimeSystemExtensions'
 $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.IsGenericMethod })[0]
 
 $asTask = $asTaskGeneric.MakeGenericMethod([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
@@ -32,10 +31,36 @@ $netTask = $asTask.Invoke($null, @($async))
 $null = $netTask.Wait(-1)
 $sessionManager = $netTask.Result
 
+$lastSourceApp = ''
+
 while ($true) {
-    $session = $sessionManager.GetCurrentSession()
-    
-    # If no SMTC session, fallback to window title scraping
+    $session = $null
+
+    # Try GetSessions first — pick the playing session, prefer the previous sourceApp
+    try {
+        $sessions = $sessionManager.GetSessions()
+        if ($sessions.Count -gt 0) {
+            $playing = @($sessions | Where-Object { $_.GetPlaybackInfo().PlaybackStatus -eq 'Playing' })
+            if ($playing.Count -gt 0) {
+                $session = $playing[0]
+                if ($playing.Count -gt 1 -and $lastSourceApp -ne '') {
+                    foreach ($s in $playing) {
+                        if ($s.SourceAppUserModelId -eq $lastSourceApp) {
+                            $session = $s
+                            break
+                        }
+                    }
+                }
+            }
+        }
+    } catch {}
+
+    # Fall back to GetCurrentSession if no playing session found
+    if ($null -eq $session) {
+        $session = $sessionManager.GetCurrentSession()
+    }
+
+    # If no SMTC session at all, fallback to window title scraping
     if ($null -eq $session) {
         $procs = Get-Process spotify, chrome, msedge, firefox -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -ne '' }
         foreach ($p in $procs) {
@@ -57,8 +82,18 @@ while ($true) {
 
     $title = $mediaProps.Title
     $artist = $mediaProps.Artist
+    $album = $mediaProps.AlbumTitle
     $isPlaying = $playbackInfo.PlaybackStatus -eq 'Playing'
     $positionMs = [long]$timeline.Position.TotalMilliseconds
+    $sourceApp = $session.SourceAppUserModelId
+    $lastSourceApp = $sourceApp
+
+    # Duration
+    $durationMs = 0
+    try {
+        $dur = ($timeline.EndTime - $timeline.StartTime).TotalMilliseconds
+        if ($dur -gt 0) { $durationMs = [long]$dur }
+    } catch {}
 
     # Extrapolate actual position to eliminate 1-2s lag
     if ($isPlaying -and $null -ne $timeline.LastUpdatedTime) {
@@ -69,7 +104,7 @@ while ($true) {
         }
     }
 
-    Write-Output "SMTC_DATA|||$title|||$artist|||$isPlaying|||$positionMs"
+    Write-Output "SMTC_DATA|||$title|||$artist|||$isPlaying|||$positionMs|||$durationMs|||$sourceApp|||$album"
     [Console]::Out.Flush()
     Start-Sleep -Milliseconds 500
 }
@@ -106,12 +141,16 @@ export function startSMTCBridge(onSongChanged) {
         pendingFallbackCount = 0
         fallbackLines = []
         const parts = line.split('|||')
-        if (parts.length < 5) continue
+        if (parts.length < 8) continue
+        const durationMs = parseInt(parts[5], 10) || 0
         const info = {
           title: parts[1],
           artist: parts[2],
           isPlaying: parts[3] === 'True',
-          positionMs: parseInt(parts[4], 10) || 0
+          positionMs: parseInt(parts[4], 10) || 0,
+          durationMs: durationMs > 0 ? durationMs : null,
+          sourceApp: parts[6] || null,
+          album: parts[7] || null
         }
         onSongChanged(info)
         continue
@@ -139,7 +178,10 @@ export function startSMTCBridge(onSongChanged) {
               title: windowTitle.slice(dashIdx + 3).trim(),
               artist: windowTitle.slice(0, dashIdx).trim(),
               isPlaying: true,
-              positionMs: 0
+              positionMs: 0,
+              durationMs: null,
+              sourceApp: proc,
+              album: null
             }
           }
           // Browser: often "Title - YouTube" or "Song • Artist" etc.
@@ -151,7 +193,10 @@ export function startSMTCBridge(onSongChanged) {
                 title: raw.slice(0, dashIdx).trim(),
                 artist: raw.slice(dashIdx + 3).trim(),
                 isPlaying: true,
-                positionMs: 0
+                positionMs: 0,
+                durationMs: null,
+                sourceApp: proc,
+                album: null
               }
             }
           }
