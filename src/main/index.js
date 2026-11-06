@@ -28,6 +28,7 @@ let tray = null
 let currentSongInfo = null
 let currentLyrics = null
 let lookupSeq = 0
+let lastSentPlayback = null
 
 /* ------------------------------------------------------------------ */
 /*  Display / bounds utilities                                        */
@@ -335,6 +336,14 @@ function setupIPC() {
     if (lyricsWindow) {
       if (currentSongInfo) lyricsWindow.webContents.send('song:changed', currentSongInfo)
       if (currentLyrics) lyricsWindow.webContents.send('lyrics:loaded', currentLyrics)
+      if (lastSentPlayback) {
+        lyricsWindow.webContents.send('playback:changed', {
+          isPlaying: lastSentPlayback.isPlaying,
+          positionMs: lastSentPlayback.isPlaying
+            ? Math.round(lastSentPlayback.positionMs + (Date.now() - lastSentPlayback.at))
+            : lastSentPlayback.positionMs
+        })
+      }
     }
     return true
   })
@@ -352,13 +361,32 @@ function startSongDetection() {
   startMediaBridge(async (info) => {
     if (!lyricsWindow) return
 
-    // Always send playback updates (position, isPlaying, and track info for robustness)
-    lyricsWindow.webContents.send('playback:changed', {
-      title: info.title,
-      artist: info.artist,
-      isPlaying: info.isPlaying,
-      positionMs: info.positionMs
-    })
+    const now = Date.now()
+    let shouldSendPlayback = false
+
+    if (!lastSentPlayback || info.songChanged || info.isPlaying !== lastSentPlayback.isPlaying) {
+      shouldSendPlayback = true
+    } else {
+      const elapsed = now - lastSentPlayback.at
+      const expectedPosition = lastSentPlayback.isPlaying
+        ? lastSentPlayback.positionMs + elapsed
+        : lastSentPlayback.positionMs
+      if (Math.abs(info.positionMs - expectedPosition) > 1500 || elapsed >= 10000) {
+        shouldSendPlayback = true
+      }
+    }
+
+    if (shouldSendPlayback) {
+      lastSentPlayback = {
+        isPlaying: info.isPlaying,
+        positionMs: info.positionMs,
+        at: now
+      }
+      lyricsWindow.webContents.send('playback:changed', {
+        isPlaying: info.isPlaying,
+        positionMs: info.positionMs
+      })
+    }
 
     // If user paused and hideWhenPaused is on, hide window
     const hideWhenPaused = store.get('hideWhenPaused', false)
