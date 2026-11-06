@@ -138,13 +138,14 @@ function createLyricsWindow() {
       clearInterval(cursorTracker)
       return
     }
+    if (!lyricsWindow.isVisible()) return
     const point = screen.getCursorScreenPoint()
-    const bounds = lyricsWindow.getBounds()
+    const wb = lyricsWindow.getBounds()
     const inside =
-      point.x >= bounds.x &&
-      point.x <= bounds.x + bounds.width &&
-      point.y >= bounds.y &&
-      point.y <= bounds.y + bounds.height
+      point.x >= wb.x &&
+      point.x <= wb.x + wb.width &&
+      point.y >= wb.y &&
+      point.y <= wb.y + wb.height
 
     if (inside !== cursorInside) {
       cursorInside = inside
