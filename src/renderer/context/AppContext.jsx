@@ -12,6 +12,7 @@ export function AppProvider({ children }) {
 
   // Ref for the high-frequency interpolated position to prevent React render thrashing
   const playbackRef = useRef({ isPlaying: false, positionMs: 0, lastUpdateTime: performance.now() })
+  const prevSongRef = useRef(null)
 
   // Load initial settings
   useEffect(() => {
@@ -42,17 +43,17 @@ export function AppProvider({ children }) {
 
     unsubs.push(
       api.onSongChanged((data) => {
-        setSong(prev => {
-          const changed = !prev || prev.title !== data.title || prev.artist !== data.artist
-          if (changed) {
-            setLyrics(null)
-            setLyricsLoading(true)
-          }
-          // Always merge albumColor and textColor from incoming data, but clear them on song change
-          // until main sends the updated color
+        const prev = prevSongRef.current
+        const changed = !prev || prev.title !== data.title || prev.artist !== data.artist
+        if (changed) {
+          prevSongRef.current = { title: data.title, artist: data.artist }
+          setLyrics(null)
+          setLyricsLoading(true)
+        }
+        setSong((current) => {
           return changed 
             ? { ...data, albumColor: data.albumColor || null, textColor: data.textColor || 'white' } 
-            : { ...prev, albumColor: data.albumColor ?? prev.albumColor, textColor: data.textColor ?? prev.textColor }
+            : { ...current, albumColor: data.albumColor ?? current?.albumColor, textColor: data.textColor ?? current?.textColor }
         })
       })
     )
@@ -76,21 +77,6 @@ export function AppProvider({ children }) {
           }
           return prev;
         });
-
-        // Force recovery if we somehow missed the song:changed event
-        setSong((current) => {
-          if (!current && data.title) {
-            setLyrics(null)
-            setLyricsLoading(true)
-            return { title: data.title, artist: data.artist, isPlaying: data.isPlaying }
-          }
-          if (current && (current.title !== data.title || current.artist !== data.artist)) {
-            setLyrics(null)
-            setLyricsLoading(true)
-            return { title: data.title, artist: data.artist, isPlaying: data.isPlaying }
-          }
-          return current
-        })
       })
     )
 
