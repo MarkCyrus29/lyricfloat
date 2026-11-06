@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell } f
 import { join } from 'path'
 import fs from 'fs'
 import Store from 'electron-store'
-import { startSMTCBridge, stopSMTCBridge } from './powerShellBridge.js'
+import { startMediaBridge, stopMediaBridge } from './mediaBridge.js'
 import { getLyrics, getAlbumColor } from './lyricsAPI.js'
 import { getTextColorForBackground } from './colorUtils.js'
 import { cleanTitleInfo } from './titleCleaner.js'
@@ -238,7 +238,7 @@ function createTray() {
     {
       label: 'Quit',
       click: () => {
-        stopSMTCBridge()
+        stopMediaBridge()
         app.quit()
       }
     }
@@ -326,7 +326,7 @@ function setupIPC() {
   })
 
   ipcMain.handle('window:closeApp', () => {
-    stopSMTCBridge()
+    stopMediaBridge()
     app.quit()
     return true
   })
@@ -349,7 +349,7 @@ function setupIPC() {
 /*  Song detection → lyrics pipeline                                  */
 /* ------------------------------------------------------------------ */
 function startSongDetection() {
-  startSMTCBridge(async (info) => {
+  startMediaBridge(async (info) => {
     if (!lyricsWindow) return
 
     // Always send playback updates (position, isPlaying, and track info for robustness)
@@ -442,5 +442,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  stopSMTCBridge()
+  stopMediaBridge()
 })

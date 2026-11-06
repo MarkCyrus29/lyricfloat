@@ -4,7 +4,6 @@ import { promisify } from 'util'
 const execAsync = promisify(exec)
 
 let pollInterval = null
-let lastSongKey = ''
 
 /* ------------------------------------------------------------------ */
 /*  AppleScript snippets for each supported player                    */
@@ -140,7 +139,7 @@ async function pollMediaInfo(onSongChanged) {
         positionMs: parseInt(parts[2], 10) || 0,
         isPlaying: parts[3] === 'playing'
       }
-      handleNewInfo(info, onSongChanged)
+      onSongChanged(info)
       return
     }
   }
@@ -156,7 +155,7 @@ async function pollMediaInfo(onSongChanged) {
         positionMs: parseInt(parts[2], 10) || 0,
         isPlaying: parts[3] === 'playing'
       }
-      handleNewInfo(info, onSongChanged)
+      onSongChanged(info)
       return
     }
   }
@@ -170,23 +169,10 @@ async function pollMediaInfo(onSongChanged) {
       const windowTitle = titleParts.join('|||').trim()
       const info = parseBrowserTitle(procName, windowTitle)
       if (info) {
-        handleNewInfo(info, onSongChanged)
+        onSongChanged(info)
         return
       }
     }
-  }
-}
-
-function handleNewInfo(info, onSongChanged) {
-  if (!info) return
-  const key = `${info.title}|${info.artist}`
-  const songChanged = key !== lastSongKey
-
-  if (songChanged) {
-    lastSongKey = key
-    onSongChanged({ ...info, songChanged: true })
-  } else {
-    onSongChanged({ ...info, songChanged: false })
   }
 }
 
@@ -207,5 +193,4 @@ export function stopMediaBridge() {
     clearInterval(pollInterval)
     pollInterval = null
   }
-  lastSongKey = ''
 }

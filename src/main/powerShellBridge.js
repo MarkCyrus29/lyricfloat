@@ -4,7 +4,6 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 let psChild = null
-let lastSongKey = ''
 
 let fallbackLines = []
 let lastFallbackSource = null
@@ -76,26 +75,16 @@ while ($true) {
 `.trim()
 
 const smtcScriptPath = join(tmpdir(), 'lyricfloat_smtc_loop.ps1')
-try { writeFileSync(smtcScriptPath, SMTC_SCRIPT) } catch(e) {}
 
 /* ------------------------------------------------------------------ */
 /*  Public API                                                        */
 /* ------------------------------------------------------------------ */
-function handleNewInfo(info, onSongChanged) {
-  if (!info) return
-  const key = `${info.title}|${info.artist}`
-  const songChanged = key !== lastSongKey
-
-  if (songChanged) {
-    lastSongKey = key
-    onSongChanged({ ...info, songChanged: true })
-  } else {
-    onSongChanged({ ...info, songChanged: false })
-  }
-}
-
 export function startSMTCBridge(onSongChanged) {
   stopSMTCBridge()
+
+  try {
+    writeFileSync(smtcScriptPath, SMTC_SCRIPT)
+  } catch (e) {}
 
   // Start persistent powershell process
   psChild = spawn('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', smtcScriptPath])
@@ -124,7 +113,7 @@ export function startSMTCBridge(onSongChanged) {
           isPlaying: parts[3] === 'True',
           positionMs: parseInt(parts[4], 10) || 0
         }
-        handleNewInfo(info, onSongChanged)
+        onSongChanged(info)
         continue
       }
       
@@ -196,7 +185,7 @@ export function startSMTCBridge(onSongChanged) {
           if (key === activeFallbackKey) {
             pendingFallbackKey = null
             pendingFallbackCount = 0
-            handleNewInfo(chosenInfo, onSongChanged)
+            onSongChanged(chosenInfo)
           } else {
             if (key === pendingFallbackKey) {
               pendingFallbackCount++
@@ -204,7 +193,7 @@ export function startSMTCBridge(onSongChanged) {
                 activeFallbackKey = key
                 pendingFallbackKey = null
                 pendingFallbackCount = 0
-                handleNewInfo(chosenInfo, onSongChanged)
+                onSongChanged(chosenInfo)
               }
             } else {
               pendingFallbackKey = key
@@ -231,7 +220,6 @@ export function stopSMTCBridge() {
     psChild.kill()
     psChild = null
   }
-  lastSongKey = ''
   fallbackLines = []
   lastFallbackSource = null
   pendingFallbackKey = null

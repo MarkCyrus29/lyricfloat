@@ -1,21 +1,42 @@
-/**
- * Platform-agnostic media bridge.
- * Routes to the correct OS-specific implementation.
- */
+import { startSMTCBridge, stopSMTCBridge } from './powerShellBridge.js'
+import { startMediaBridge as startMacBridge, stopMediaBridge as stopMacBridge } from './macMediaBridge.js'
 
-let _start, _stop
+let lastSongKey = ''
+let warnedUnsupported = false
 
-if (process.platform === 'darwin') {
-  // macOS — AppleScript-based detection
-  const mac = await import('./macMediaBridge.js')
-  _start = mac.startMediaBridge
-  _stop = mac.stopMediaBridge
-} else {
-  // Windows — PowerShell SMTC bridge
-  const win = await import('./powerShellBridge.js')
-  _start = win.startSMTCBridge
-  _stop = win.stopSMTCBridge
+export function startMediaBridge(callback) {
+  lastSongKey = ''
+
+  const wrappedCallback = (info) => {
+    if (!info) return
+    const key = `${info.title}|${info.artist}`
+    const songChanged = key !== lastSongKey
+    if (songChanged) {
+      lastSongKey = key
+    }
+    callback({
+      ...info,
+      songChanged
+    })
+  }
+
+  if (process.platform === 'win32') {
+    startSMTCBridge(wrappedCallback)
+  } else if (process.platform === 'darwin') {
+    startMacBridge(wrappedCallback)
+  } else {
+    if (!warnedUnsupported) {
+      console.warn('[LyricFloat] Unsupported platform for media detection')
+      warnedUnsupported = true
+    }
+  }
 }
 
-export const startMediaBridge = _start
-export const stopMediaBridge = _stop
+export function stopMediaBridge() {
+  lastSongKey = ''
+  if (process.platform === 'win32') {
+    stopSMTCBridge()
+  } else if (process.platform === 'darwin') {
+    stopMacBridge()
+  }
+}
