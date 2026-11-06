@@ -29,6 +29,7 @@ let currentSongInfo = null
 let currentLyrics = null
 let lookupSeq = 0
 let lastSentPlayback = null
+let lastIsPlaying = null
 
 /* ------------------------------------------------------------------ */
 /*  Display / bounds utilities                                        */
@@ -388,11 +389,14 @@ function startSongDetection() {
       })
     }
 
-    // If user paused and hideWhenPaused is on, hide window
-    const hideWhenPaused = store.get('hideWhenPaused', false)
-    if (hideWhenPaused) {
-      if (!info.isPlaying) lyricsWindow.hide()
-      else lyricsWindow.show()
+    // If user paused and hideWhenPaused is on, toggle window on transition
+    if (lastIsPlaying !== info.isPlaying) {
+      const hideWhenPaused = store.get('hideWhenPaused', false)
+      if (hideWhenPaused) {
+        if (!info.isPlaying) lyricsWindow.hide()
+        else lyricsWindow.show()
+      }
+      lastIsPlaying = info.isPlaying
     }
 
     // Only fetch lyrics when the song actually changes
