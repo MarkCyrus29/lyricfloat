@@ -179,3 +179,4 @@ describe('titleCleaner - buildLookupCandidates', () => {
     assert.equal(res.cleanArtist, 'Ed Sheeran')
   })
 })
+

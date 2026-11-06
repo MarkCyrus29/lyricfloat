@@ -40,3 +40,4 @@ export function profileFor(category) {
   }
   return 'full'
 }
+

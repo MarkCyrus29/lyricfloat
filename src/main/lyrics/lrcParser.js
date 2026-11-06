@@ -65,3 +65,4 @@ export function parseLRC(lrcText) {
   result.sort((a, b) => a.time - b.time)
   return result
 }
+

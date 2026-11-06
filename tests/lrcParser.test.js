@@ -66,3 +66,4 @@ describe('lrcParser', () => {
     assert.equal(result[2].text, 'Third')
   })
 })
+

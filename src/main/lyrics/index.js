@@ -184,3 +184,4 @@ export async function getLyricsForSong(info, candidates, { signal } = {}) {
 
   return notFound
 }
+

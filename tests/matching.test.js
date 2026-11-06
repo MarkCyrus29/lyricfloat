@@ -59,3 +59,4 @@ describe('matching', () => {
     assert.equal(scoreWeak, 0.9625) // 0.55*1 + 0.30*1 + 0.15*0.75 = 0.9625
   })
 })
+

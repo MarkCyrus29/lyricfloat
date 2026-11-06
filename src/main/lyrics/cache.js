@@ -119,3 +119,4 @@ export function setCachedLyrics(title, artist, category, result) {
 export function flushCache() {
   flush()
 }
+
