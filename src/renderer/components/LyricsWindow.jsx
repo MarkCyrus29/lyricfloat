@@ -9,8 +9,26 @@ const FONT_SIZES = {
   "extra-large": { active: "text-3xl", inactive: "text-xl" },
 };
 
+function findActiveLineIndex(lines, posSeconds) {
+  let low = 0;
+  let high = lines.length - 1;
+  let result = -1;
+
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (lines[mid].time <= posSeconds) {
+      result = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return result;
+}
+
 export default function LyricsWindow() {
-  const { song, playbackRef, lyrics, lyricsLoading, settings, updateSetting } =
+  const { song, playback, playbackRef, lyrics, lyricsLoading, settings, updateSetting } =
     useApp();
   const scrollRef = useRef(null);
   const activeRef = useRef(null);
@@ -72,36 +90,50 @@ export default function LyricsWindow() {
       return;
     }
 
-    let rafId;
-    const checkLine = () => {
+    let rafId = null;
+
+    const updateLine = () => {
       if (!playbackRef?.current) return;
-
       const { positionMs, isPlaying, lastUpdateTime } = playbackRef.current;
-
-      // Interpolate current position based on the last IPC update
       let currentPosMs = positionMs;
       if (isPlaying) {
         currentPosMs += (performance.now() - lastUpdateTime);
       }
-
       const posSeconds = currentPosMs / 1000;
-      let active = -1;
-      
-      for (let i = 0; i < lyrics.lines.length; i++) {
-        if (lyrics.lines[i].time <= posSeconds) {
-          active = i;
-        } else {
-          break;
-        }
-      }
-
+      const active = findActiveLineIndex(lyrics.lines, posSeconds);
       setActiveLine((prev) => (prev !== active ? active : prev));
-      rafId = requestAnimationFrame(checkLine);
     };
 
-    rafId = requestAnimationFrame(checkLine);
-    return () => cancelAnimationFrame(rafId);
-  }, [lyrics, playbackRef]);
+    const loop = () => {
+      if (document.hidden || !playback?.isPlaying) return;
+      updateLine();
+      rafId = requestAnimationFrame(loop);
+    };
+
+    // Calculate once immediately (e.g. when paused or on song load)
+    updateLine();
+
+    if (playback?.isPlaying && !document.hidden) {
+      rafId = requestAnimationFrame(loop);
+    }
+
+    const onVisibilityChange = () => {
+      if (!document.hidden && playback?.isPlaying) {
+        if (rafId) cancelAnimationFrame(rafId);
+        updateLine();
+        rafId = requestAnimationFrame(loop);
+      } else if (document.hidden && rafId) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [lyrics, playback?.isPlaying, playbackRef]);
 
   // Auto-scroll to active line
   useEffect(() => {
