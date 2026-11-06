@@ -5,7 +5,8 @@ import Store from 'electron-store'
 import { startMediaBridge, stopMediaBridge } from './mediaBridge.js'
 import { getLyrics, getAlbumColor } from './lyricsAPI.js'
 import { getTextColorForBackground } from './colorUtils.js'
-import { cleanTitleInfo } from './titleCleaner.js'
+import { buildLookupCandidates } from './titleCleaner.js'
+import { classifySource } from './sourceProfiles.js'
 
 const isDev = !app.isPackaged
 // Default settings mirror src/renderer/context/defaults.js
@@ -429,14 +430,29 @@ function startSongDetection() {
 
       // Fetch lyrics and album color in parallel
       const bgMode = store.get('bgMode', 'album')
-      const { cleanTitle, cleanArtist } = cleanTitleInfo(info.title, info.artist)
-      const fetchColor = bgMode === 'album' ? getAlbumColor(cleanTitle, cleanArtist) : Promise.resolve(null)
+      const category = classifySource(info.sourceApp)
+      const candidates = buildLookupCandidates({ ...info, category })
+      const firstCand = candidates[0] || { title: info.title, artist: info.artist }
+      const fetchColor = bgMode === 'album' ? getAlbumColor(firstCand.title, firstCand.artist) : Promise.resolve(null)
+
+      const fetchLyricsIterative = async () => {
+        for (const c of candidates) {
+          if (seq !== lookupSeq) return null
+          try {
+            const res = await getLyrics(c.title, c.artist)
+            if (res && res.lines && res.lines.length > 0) {
+              return res
+            }
+          } catch (e) {}
+        }
+        return { synced: false, lines: [] }
+      }
 
       Promise.all([
-        getLyrics(cleanTitle, cleanArtist),
+        fetchLyricsIterative(),
         fetchColor
       ]).then(([lyrics, color]) => {
-        if (seq !== lookupSeq) return
+        if (seq !== lookupSeq || !lyrics) return
         currentLyrics = lyrics
         songInfo.albumColor = color
         songInfo.textColor = getTextColorForBackground(color)
