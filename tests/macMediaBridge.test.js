@@ -12,8 +12,8 @@ import {
 describe('macMediaBridge (macOS)', () => {
   it('validates COMBINED_SCRIPT AppleScript structure and linefeed usage', () => {
     assert.ok(COMBINED_SCRIPT.includes('tell application "System Events"'))
-    assert.ok(COMBINED_SCRIPT.includes('tell application "Spotify"'))
-    assert.ok(COMBINED_SCRIPT.includes('tell application "Music"'))
+    assert.ok(COMBINED_SCRIPT.includes('run script spotScript'))
+    assert.ok(COMBINED_SCRIPT.includes('run script musicScript'))
     // Must use AppleScript `linefeed` keyword rather than escaped backslash-n literal
     assert.ok(COMBINED_SCRIPT.includes('& linefeed'))
     assert.ok(!COMBINED_SCRIPT.includes('\\\\n'))

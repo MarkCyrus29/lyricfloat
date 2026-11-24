@@ -8,6 +8,9 @@ let stopped = true
 
 /* ------------------------------------------------------------------ */
 /*  Combined AppleScript: single osascript spawn per poll             */
+/*  Uses `run script` dynamically after System Events confirms        */
+/*  Spotify or Music is running so the outer script compiles cleanly  */
+/*  even on Macs where Spotify.app is not installed.                  */
 /* ------------------------------------------------------------------ */
 export const COMBINED_SCRIPT = `
 tell application "System Events"
@@ -19,31 +22,37 @@ tell application "System Events"
 end tell
 
 if procNames contains "Spotify" then
-  tell application "Spotify"
-    if player state is not stopped then
+  try
+    set spotScript to "tell application \\"Spotify\\"
+      if player state is stopped then return \\"\\"
       set t to name of current track
       set a to artist of current track
       set al to album of current track
       set d to duration of current track
       set p to player position
       set s to player state as string
-      return "SPOTIFY|||" & t & "|||" & a & "|||" & (p * 1000 as integer) & "|||" & s & "|||" & d & "|||" & al
-    end if
-  end tell
+      return \\"SPOTIFY|||\\" & t & \\"|||\\" & a & \\"|||\\" & ((p * 1000) as integer) & \\"|||\\" & s & \\"|||\\" & d & \\"|||\\" & al
+    end tell"
+    set spotRes to run script spotScript
+    if spotRes is not "" then return spotRes
+  end try
 end if
 
 if procNames contains "Music" then
-  tell application "Music"
-    if player state is not stopped then
+  try
+    set musicScript to "tell application \\"Music\\"
+      if player state is stopped then return \\"\\"
       set t to name of current track
       set a to artist of current track
       set al to album of current track
       set d to duration of current track
       set p to player position
       set s to player state as string
-      return "MUSIC|||" & t & "|||" & a & "|||" & (p * 1000 as integer) & "|||" & s & "|||" & d & "|||" & al
-    end if
-  end tell
+      return \\"MUSIC|||\\" & t & \\"|||\\" & a & \\"|||\\" & ((p * 1000) as integer) & \\"|||\\" & s & \\"|||\\" & d & \\"|||\\" & al
+    end tell"
+    set musicRes to run script musicScript
+    if musicRes is not "" then return musicRes
+  end try
 end if
 
 set output to ""
@@ -97,12 +106,12 @@ export function parseBrowserTitle(procName, windowTitle) {
   // SoundCloud: "Stream Title by Artist | Listen …"
   if (windowTitle.includes(' by ') && windowTitle.includes('| Listen')) {
     const stripped = windowTitle.split('| Listen')[0].trim()
-    const StrippedWithoutStream = stripped.replace(/^Stream\s+/i, '').trim()
-    const byIdx = StrippedWithoutStream.lastIndexOf(' by ')
+    const strippedWithoutStream = stripped.replace(/^Stream\s+/i, '').trim()
+    const byIdx = strippedWithoutStream.lastIndexOf(' by ')
     if (byIdx > 0) {
       return {
-        title: StrippedWithoutStream.slice(0, byIdx).trim(),
-        artist: StrippedWithoutStream.slice(byIdx + 4).trim(),
+        title: strippedWithoutStream.slice(0, byIdx).trim(),
+        artist: strippedWithoutStream.slice(byIdx + 4).trim(),
         isPlaying: true,
         positionMs: 0,
         durationMs: null,
