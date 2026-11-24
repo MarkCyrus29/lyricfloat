@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openSettings: () => ipcRenderer.invoke('window:openSettings'),
   closeSettings: () => ipcRenderer.invoke('window:closeSettings'),
   closeApp: () => ipcRenderer.invoke('window:closeApp'),
+  startWindowDrag: () => ipcRenderer.send('window:startDrag'),
+  stopWindowDrag: () => ipcRenderer.send('window:stopDrag'),
 
   /* ---- Event listeners (renderer ← main) ---- */
   onSongChanged: (cb) => {

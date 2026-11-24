@@ -153,22 +153,24 @@ export async function getLyricsForSong(info, candidates, { signal } = {}) {
     }
   }
 
-  // Stage 4: lyrics.ovh for the first 2 candidates that have a non-empty artist
-  const ovhCands = cands.filter(c => c.artist && c.artist.trim()).slice(0, 2)
-  for (const cand of ovhCands) {
-    if (!canRequest()) break
-    requestCount++
-    try {
-      const results = await lyricsOvh.lookup({
-        candidate: cand,
-        durationMs: info.durationMs,
-        durationTrust,
-        signal
-      })
-      for (const res of results) {
-        evaluateResult(res, cand)
-      }
-    } catch (e) {}
+  // Stage 4: lyrics.ovh (only plain lyrics) — skip if we already have a strong plain match
+  if (!bestPlain || bestPlainScore < 0.85) {
+    const ovhCands = cands.filter(c => c.artist && c.artist.trim()).slice(0, 2)
+    for (const cand of ovhCands) {
+      if (!canRequest()) break
+      requestCount++
+      try {
+        const results = await lyricsOvh.lookup({
+          candidate: cand,
+          durationMs: info.durationMs,
+          durationTrust,
+          signal
+        })
+        for (const res of results) {
+          evaluateResult(res, cand)
+        }
+      } catch (e) {}
+    }
   }
 
   // If a plain lyric result was accepted

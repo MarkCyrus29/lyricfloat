@@ -1,14 +1,79 @@
-import React, { useRef, useEffect, useState, useMemo } from "react";
+import React, { useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
 import { useApp } from "../context/AppContext.jsx";
-import { TriangleAlert, HeartCrack, Search } from "lucide-react";
+import {
+  TriangleAlert,
+  HeartCrack,
+  Search,
+  Music,
+  Settings,
+  LocateFixed,
+  GripHorizontal,
+} from "lucide-react";
 import StateScreen from "./StateScreen.jsx";
 import CloseButton from "./CloseButton.jsx";
 
 const FONT_SIZES = {
-  small: { active: "text-base", inactive: "text-sm" },
-  medium: { active: "text-lg", inactive: "text-base" },
-  large: { active: "text-2xl", inactive: "text-lg" },
-  "extra-large": { active: "text-3xl", inactive: "text-xl" },
+  small: {
+    active: "text-base",
+    inactive: "text-sm",
+    subActive: "text-xs",
+    subInactive: "text-[11px]",
+  },
+  medium: {
+    active: "text-lg",
+    inactive: "text-base",
+    subActive: "text-xs",
+    subInactive: "text-xs",
+  },
+  large: {
+    active: "text-2xl",
+    inactive: "text-lg",
+    subActive: "text-sm",
+    subInactive: "text-xs",
+  },
+  "extra-large": {
+    active: "text-3xl",
+    inactive: "text-xl",
+    subActive: "text-base",
+    subInactive: "text-sm",
+  },
+};
+
+const DARK_TEXT_COLORS = {
+  base: "text-black",
+  hover: "hover:text-black",
+  o70: "text-black/70",
+  o60: "text-black/60",
+  o50: "text-black/50",
+  o40: "text-black/40",
+  o30: "text-black/30",
+};
+
+const LIGHT_TEXT_COLORS = {
+  base: "text-white",
+  hover: "hover:text-white",
+  o70: "text-white/70",
+  o60: "text-white/60",
+  o50: "text-white/50",
+  o40: "text-white/40",
+  o30: "text-white/30",
+};
+
+const ACTIVE_TRANSPARENT_STYLE = {
+  backgroundColor: "rgba(0,0,0,0.31)",
+  display: "block",
+  width: "100%",
+};
+
+const INACTIVE_TRANSPARENT_STYLE = {
+  display: "block",
+  width: "100%",
+};
+
+const TRANSPARENT_CONTAINER_STYLE = {
+  backgroundColor: "rgba(0,0,0,0.2)",
+  backdropFilter: "blur(6px)",
+  WebkitBackdropFilter: "blur(6px)",
 };
 
 function findActiveLineIndex(lines, posSeconds) {
@@ -29,40 +94,126 @@ function findActiveLineIndex(lines, posSeconds) {
   return result;
 }
 
+const LyricLine = memo(function LyricLine({
+  text,
+  translation,
+  showTranslation,
+  isActive,
+  isPast,
+  isTransparent,
+  bouncy,
+  colorClass,
+  sizeClass,
+  subColorClass,
+  subSizeClass,
+  activeRef,
+}) {
+  const trimmed = text?.trim();
+  let stateMotionClass = "";
+  if (bouncy) {
+    if (isActive) {
+      stateMotionClass = "lyric-line-bouncy-active";
+    } else if (isPast) {
+      stateMotionClass = "lyric-line-bouncy-past";
+    } else {
+      stateMotionClass = "lyric-line-bouncy-upcoming";
+    }
+  }
+
+  return (
+    <p
+      ref={isActive ? activeRef : null}
+      className={`lyric-line ${bouncy ? "lyric-line-bouncy" : ""} ${stateMotionClass} ${
+        isActive ? "py-3.5 font-semibold" : "py-2 font-normal"
+      } cursor-grab active:cursor-grabbing select-none ${colorClass} ${sizeClass} ${
+        isTransparent ? (isActive ? "px-5" : "px-2.5") : ""
+      }`}
+      style={
+        isTransparent
+          ? isActive
+            ? ACTIVE_TRANSPARENT_STYLE
+            : INACTIVE_TRANSPARENT_STYLE
+          : undefined
+      }
+    >
+      {trimmed ? (
+        <>
+          <span className="block">{trimmed}</span>
+          {showTranslation && translation && (
+            <span
+              className={`block font-normal mt-0.5 leading-snug ${subColorClass} ${subSizeClass}`}
+            >
+              {translation}
+            </span>
+          )}
+        </>
+      ) : (
+        <Music className="inline-block w-4 h-4 opacity-75 align-middle" />
+      )}
+    </p>
+  );
+});
+
 export default function LyricsWindow() {
-  const { song, playback, playbackRef, lyrics, lyricsLoading, settings, updateSetting } =
-    useApp();
+  const {
+    song,
+    playback,
+    playbackRef,
+    subscribePlayback,
+    lyrics,
+    lyricsLoading,
+    settings,
+    updateSetting,
+  } = useApp();
   const scrollRef = useRef(null);
   const activeRef = useRef(null);
+  const springRafRef = useRef(null);
+  const isProgrammaticScrollRef = useRef(false);
+  const hasLeftSyncZoneRef = useRef(false);
+  const snapSettleTimerRef = useRef(null);
   const [hovering, setHovering] = useState(false);
-  const isTransparent = settings.bgColor === 'transparent';
+  const [userScrolled, setUserScrolled] = useState(false);
+  const isTransparent = settings.bgColor === "transparent";
+  const bouncy = settings.bouncyLyrics !== false;
+  const showTranslation = settings.showTranslation !== false;
+  const hasTranslation = Boolean(lyrics?.needsTranslation);
 
-  const bgMode = settings.bgMode || 'album';
+  const bgMode = settings.bgMode || "album";
 
-  const useDarkText = !isTransparent && bgMode === 'album' && song?.textColor === 'black';
-  const tColors = useDarkText
-    ? { base: 'text-black', hover: 'hover:text-black', o70: 'text-black/70', o60: 'text-black/60', o50: 'text-black/50', o40: 'text-black/40', o30: 'text-black/30' }
-    : { base: 'text-white', hover: 'hover:text-white', o70: 'text-white/70', o60: 'text-white/60', o50: 'text-white/50', o40: 'text-white/40', o30: 'text-white/30' };
-
+  const useDarkText =
+    !isTransparent && bgMode === "album" && song?.textColor === "black";
+  const tColors = useDarkText ? DARK_TEXT_COLORS : LIGHT_TEXT_COLORS;
 
   const computedBg = useMemo(() => {
     if (isTransparent) return "transparent";
-    if (bgMode === 'album' && song?.albumColor) {
-      return song.albumColor.replace('rgb', 'rgba').replace(')', `, ${settings.opacity})`);
+    if (bgMode === "album" && song?.albumColor) {
+      return song.albumColor
+        .replace("rgb", "rgba")
+        .replace(")", `, ${settings.opacity})`);
     }
-    if (settings.bgColor.startsWith('rgba')) {
+    if (settings.bgColor.startsWith("rgba")) {
       return settings.bgColor.replace(/[\d.]+\)$/, `${settings.opacity})`);
     }
     return settings.bgColor;
   }, [isTransparent, bgMode, song?.albumColor, settings.opacity, settings.bgColor]);
 
+  // Reset manual scroll override whenever song or lyrics change
+  useEffect(() => {
+    hasLeftSyncZoneRef.current = false;
+    if (snapSettleTimerRef.current) {
+      clearTimeout(snapSettleTimerRef.current);
+      snapSettleTimerRef.current = null;
+    }
+    setUserScrolled(false);
+  }, [song?.title, song?.artist, lyrics]);
+
   // Listen for cursor enter/leave via IPC from main process cursor tracking
   useEffect(() => {
     const unsubEnter = window.electronAPI?.onMouseEnter(() =>
-      setHovering(true),
+      setHovering(true)
     );
     const unsubLeave = window.electronAPI?.onMouseLeave(() =>
-      setHovering(false),
+      setHovering(false)
     );
     return () => {
       unsubEnter?.();
@@ -72,72 +223,254 @@ export default function LyricsWindow() {
 
   const [activeLine, setActiveLine] = useState(-1);
 
-  // Sync activeLine via requestAnimationFrame for high performance
+  // Deadline-based timer: wakes up only when the next lyric line arrives (or on seek/visibility change)
   useEffect(() => {
     if (!lyrics?.lines?.length || !lyrics.synced) {
       setActiveLine(-1);
       return;
     }
 
-    let rafId = null;
+    let timerId = null;
 
-    const updateLine = () => {
-      if (!playbackRef?.current) return;
-      const { positionMs, isPlaying, lastUpdateTime } = playbackRef.current;
-      let currentPosMs = positionMs;
-      if (isPlaying) {
-        currentPosMs += (performance.now() - lastUpdateTime);
+    const syncAndSchedule = () => {
+      if (timerId !== null) {
+        clearTimeout(timerId);
+        timerId = null;
       }
-      const posSeconds = currentPosMs / 1000;
-      const active = findActiveLineIndex(lyrics.lines, posSeconds);
+      if (!playbackRef?.current) return;
+
+      const { positionMs, isPlaying, lastUpdateTime } = playbackRef.current;
+      const currentPosMs = isPlaying
+        ? positionMs + (performance.now() - lastUpdateTime)
+        : positionMs;
+      const active = findActiveLineIndex(lyrics.lines, currentPosMs / 1000);
       setActiveLine((prev) => (prev !== active ? active : prev));
+
+      if (!isPlaying || document.hidden) return;
+
+      const nextIndex = active + 1;
+      if (nextIndex < lyrics.lines.length) {
+        const nextTimeMs = lyrics.lines[nextIndex].time * 1000;
+        const delayMs = Math.min(
+          30000,
+          Math.max(16, Math.ceil(nextTimeMs - currentPosMs))
+        );
+        timerId = setTimeout(syncAndSchedule, delayMs);
+      }
     };
 
-    const loop = () => {
-      if (document.hidden || !playback?.isPlaying) return;
-      updateLine();
-      rafId = requestAnimationFrame(loop);
-    };
+    syncAndSchedule();
 
-    // Calculate once immediately (e.g. when paused or on song load)
-    updateLine();
-
-    if (playback?.isPlaying && !document.hidden) {
-      rafId = requestAnimationFrame(loop);
-    }
+    const unsubPlayback = subscribePlayback(syncAndSchedule);
 
     const onVisibilityChange = () => {
-      if (!document.hidden && playback?.isPlaying) {
-        if (rafId) cancelAnimationFrame(rafId);
-        updateLine();
-        rafId = requestAnimationFrame(loop);
-      } else if (document.hidden && rafId) {
-        cancelAnimationFrame(rafId);
+      if (document.hidden) {
+        if (timerId !== null) {
+          clearTimeout(timerId);
+          timerId = null;
+        }
+      } else {
+        syncAndSchedule();
       }
     };
 
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
-      if (rafId) cancelAnimationFrame(rafId);
+      if (timerId !== null) clearTimeout(timerId);
+      unsubPlayback?.();
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [lyrics, playback?.isPlaying, playbackRef]);
+  }, [lyrics, playback?.isPlaying, playbackRef, subscribePlayback]);
 
-  // Auto-scroll to active line
-  useEffect(() => {
-    if (activeRef.current) {
-      activeRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
+  // Smoothly glide the scroll container so the active lyric line is centered
+  const scrollToActiveLine = useCallback(() => {
+    if (springRafRef.current) {
+      cancelAnimationFrame(springRafRef.current);
+      springRafRef.current = null;
     }
-  }, [activeLine]);
+
+    const container = scrollRef.current;
+    const activeEl = activeRef.current;
+    if (!container || !activeEl) return;
+
+    const startScroll = container.scrollTop;
+    const startTime = performance.now();
+    const duration = bouncy ? 560 : 420; // ms
+
+    // Smooth ease-out with a gentle, non-jarring cushion when bouncy is enabled
+    const easeScroll = (t) => {
+      if (t >= 1) return 1;
+      if (!bouncy) {
+        // Standard smooth cubic ease-out
+        return 1 - Math.pow(1 - t, 3);
+      }
+      // Silky damped spring ease-out (single smooth overshoot of ~2.5% without backward oscillation jitter)
+      const c1 = 0.9;
+      const c3 = c1 + 1;
+      return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+    };
+
+    isProgrammaticScrollRef.current = true;
+    // Temporarily disable CSS scroll-behavior: smooth during rAF interpolation so frames don't double-ease
+    container.style.scrollBehavior = "auto";
+
+    const step = (now) => {
+      if (!scrollRef.current || !activeRef.current) {
+        isProgrammaticScrollRef.current = false;
+        return;
+      }
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / duration);
+
+      // Re-query live target center so expanding padding/height is tracked seamlessly
+      const cRect = container.getBoundingClientRect();
+      const aRect = activeEl.getBoundingClientRect();
+      const currentTarget = Math.max(
+        0,
+        container.scrollTop + (aRect.top - cRect.top) - container.clientHeight / 2 + aRect.height / 2
+      );
+      const totalDelta = currentTarget - startScroll;
+
+      if (Math.abs(totalDelta) >= 0.5) {
+        container.scrollTop = startScroll + totalDelta * easeScroll(t);
+      }
+
+      if (t < 1) {
+        springRafRef.current = requestAnimationFrame(step);
+      } else {
+        springRafRef.current = null;
+        isProgrammaticScrollRef.current = false;
+        container.style.scrollBehavior = "smooth";
+      }
+    };
+
+    springRafRef.current = requestAnimationFrame(step);
+  }, [bouncy]);
+
+  // Auto-scroll to active line unless the user manually scrolled away
+  useEffect(() => {
+    if (userScrolled) return;
+    scrollToActiveLine();
+
+    return () => {
+      if (springRafRef.current) {
+        cancelAnimationFrame(springRafRef.current);
+        springRafRef.current = null;
+        isProgrammaticScrollRef.current = false;
+      }
+    };
+  }, [activeLine, userScrolled, scrollToActiveLine, showTranslation, hasTranslation]);
+
+  // Helper to measure pixel distance between the active line's center and the scroll container's center
+  const getActiveLineCenterDistance = useCallback(() => {
+    const container = scrollRef.current;
+    const activeEl = activeRef.current;
+    if (!container || !activeEl) return Infinity;
+    const containerRect = container.getBoundingClientRect();
+    const activeRect = activeEl.getBoundingClientRect();
+    const containerCenter = containerRect.top + containerRect.height / 2;
+    const activeCenter = activeRect.top + activeRect.height / 2;
+    return Math.abs(activeCenter - containerCenter);
+  }, []);
+
+  // Snap back to the active synced line and resume auto-scrolling
+  const handleResync = useCallback(() => {
+    hasLeftSyncZoneRef.current = false;
+    if (snapSettleTimerRef.current) {
+      clearTimeout(snapSettleTimerRef.current);
+      snapSettleTimerRef.current = null;
+    }
+    setUserScrolled(false);
+    scrollToActiveLine();
+  }, [scrollToActiveLine]);
+
+  // When user scrolls with mouse wheel or trackpad, pause auto-scroll and reveal the Sync button
+  const handleUserScrollInteraction = useCallback(() => {
+    if (!lyrics?.synced) return;
+    if (springRafRef.current) {
+      cancelAnimationFrame(springRafRef.current);
+      springRafRef.current = null;
+    }
+    isProgrammaticScrollRef.current = false;
+    if (scrollRef.current) {
+      scrollRef.current.style.scrollBehavior = "smooth";
+    }
+    if (!userScrolled) {
+      setUserScrolled(true);
+    }
+  }, [lyrics?.synced, userScrolled]);
+
+  // Magnetic snap-to-sync when the user scrolls back into the active synced lyric and settles
+  const handleScroll = useCallback(() => {
+    if (!lyrics?.synced || !userScrolled || isProgrammaticScrollRef.current) return;
+
+    const dist = getActiveLineCenterDistance();
+
+    // Mark that the user has scrolled meaningfully away from the active lyric line
+    if (dist > 95) {
+      hasLeftSyncZoneRef.current = true;
+    }
+
+    if (snapSettleTimerRef.current) {
+      clearTimeout(snapSettleTimerRef.current);
+      snapSettleTimerRef.current = null;
+    }
+
+    // Wait briefly for the user's wheel/trackpad momentum to settle near the active line, then smoothly glide into center
+    if (hasLeftSyncZoneRef.current && dist <= 75) {
+      snapSettleTimerRef.current = setTimeout(() => {
+        snapSettleTimerRef.current = null;
+        if (getActiveLineCenterDistance() <= 75) {
+          handleResync();
+        }
+      }, 160);
+    }
+  }, [lyrics?.synced, userScrolled, getActiveLineCenterDistance, handleResync]);
+
+  // Full-window drag via pointer capture + main-process bounds tracking (preserves mouse-wheel scrolling everywhere)
+  const handleWindowPointerDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest("button, a, input, select, textarea, [data-no-drag]")) return;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+    window.electronAPI?.startWindowDrag();
+  }, []);
+
+  const handleWindowPointerUp = useCallback((e) => {
+    try {
+      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {}
+    window.electronAPI?.stopWindowDrag();
+  }, []);
+
+  useEffect(() => {
+    const stopOnBlur = () => window.electronAPI?.stopWindowDrag();
+    window.addEventListener("blur", stopOnBlur);
+    window.addEventListener("mouseup", stopOnBlur);
+    return () => {
+      window.removeEventListener("blur", stopOnBlur);
+      window.removeEventListener("mouseup", stopOnBlur);
+      window.electronAPI?.stopWindowDrag();
+    };
+  }, []);
 
   const fontSize = FONT_SIZES[settings.fontSize] || FONT_SIZES.medium;
 
   const toggleTransparent = () => {
     const newVal = isTransparent ? "rgba(18,18,18,0.92)" : "transparent";
     updateSetting("bgColor", newVal);
-    window.electronAPI?.previewSetting('bgColor', newVal);
+    window.electronAPI?.previewSetting("bgColor", newVal);
     window.electronAPI?.saveSetting({ bgColor: newVal });
+  };
+
+  const toggleTranslation = () => {
+    const next = !showTranslation;
+    updateSetting("showTranslation", next);
+    window.electronAPI?.previewSetting("showTranslation", next);
   };
 
   /* ---- RENDER ---- */
@@ -150,7 +483,7 @@ export default function LyricsWindow() {
         isTransparent={isTransparent}
         tColors={tColors}
       >
-        <div className="text-4xl mb-4">🎵</div>
+        <Music className={`w-10 h-10 mb-4 ${tColors.base}`} />
         <p className={`${tColors.o70} text-lg font-medium`}>
           Play a song to see lyrics
         </p>
@@ -169,11 +502,13 @@ export default function LyricsWindow() {
         isTransparent={isTransparent}
         tColors={tColors}
       >
-        <Search className={`animate-pulse text-4xl mb-4 ${tColors.base}`} />
+        <Search className={`animate-pulse w-10 h-10 mb-4 ${tColors.base}`} />
         <p className={`${tColors.o70} text-lg font-medium`}>
           Looking up lyrics for
         </p>
-        <p className={`${tColors.base} text-xl font-semibold mt-1`}>{song.title}</p>
+        <p className={`${tColors.base} text-xl font-semibold mt-1`}>
+          {song.title}
+        </p>
         <p className={`${tColors.o50} text-sm mt-1`}>{song.artist}</p>
       </StateScreen>
     );
@@ -187,7 +522,7 @@ export default function LyricsWindow() {
         isTransparent={isTransparent}
         tColors={tColors}
       >
-        <div className="text-4xl mb-4">🎵</div>
+        <Music className={`w-10 h-10 mb-4 ${tColors.base}`} />
         <p className={`${tColors.o70} text-lg font-medium`}>Instrumental</p>
         <p className={`${tColors.base} text-base mt-1`}>
           {song.title} — {song.artist}
@@ -204,7 +539,7 @@ export default function LyricsWindow() {
         isTransparent={isTransparent}
         tColors={tColors}
       >
-        <HeartCrack className={`animate-bounce text-4xl mb-4 ${tColors.base}`} />
+        <HeartCrack className={`animate-bounce w-10 h-10 mb-4 ${tColors.base}`} />
         <p className={`${tColors.o70} text-lg font-medium`}>No lyrics found</p>
         <p className={`${tColors.base} text-base mt-1`}>
           {song.title} — {song.artist}
@@ -215,80 +550,112 @@ export default function LyricsWindow() {
 
   return (
     <div
-      className="drag w-full h-full flex flex-col rounded-2xl relative overflow-hidden transition-colors duration-1000"
+      onPointerDown={handleWindowPointerDown}
+      onPointerUp={handleWindowPointerUp}
+      onPointerCancel={handleWindowPointerUp}
+      onLostPointerCapture={() => window.electronAPI?.stopWindowDrag()}
+      onMouseEnter={() => setHovering(true)}
+      onMouseMove={() => !hovering && setHovering(true)}
+      className="no-drag cursor-grab active:cursor-grabbing w-full h-full flex flex-col rounded-2xl relative overflow-hidden transition-colors duration-1000 select-none"
       style={{ background: computedBg }}
     >
-      {/* ---- Drag handle for unsynced (scroll area is no-drag) ---- */}
-      {!lyrics.synced && <div className="drag h-12 flex-shrink-0" />}
+      {/* ---- Subtle top-center drag handle icon ---- */}
+      <div
+        className={`h-8 flex-shrink-0 flex items-center justify-center pointer-events-none transition-opacity duration-200 ${
+          hovering ? "opacity-0" : "opacity-60"
+        } ${tColors.o40}`}
+      >
+        <GripHorizontal size={18} />
+      </div>
 
-      {/* ---- Lyrics scroll area ---- */}
-      <div ref={scrollRef} className={`${lyrics.synced ? 'drag' : 'no-drag'} lyrics-scroll flex-1 px-6 ${lyrics.synced ? 'py-16' : 'pb-16'}`}>
-        {lyrics.lines.map((line, i) => {
-          const isActive = i === activeLine;
-          const isPast = i < activeLine;
-          const isUpcoming = i > activeLine;
+      {/* ---- Lyrics scroll area (always scrollable AND draggable anywhere) ---- */}
+      <div
+        ref={scrollRef}
+        onWheel={handleUserScrollInteraction}
+        onTouchMove={handleUserScrollInteraction}
+        onScroll={handleScroll}
+        className="no-drag cursor-grab active:cursor-grabbing lyrics-scroll flex-1 px-6 pb-16"
+      >
+        {/* Single backdrop-filter layer in transparent mode instead of N per-line blur layers */}
+        <div
+          className={isTransparent ? "rounded-lg overflow-hidden" : undefined}
+          style={isTransparent ? TRANSPARENT_CONTAINER_STYLE : undefined}
+        >
+          {lyrics.lines.map((line, i) => {
+            const isActive = i === activeLine;
+            const isPast = i < activeLine;
 
-          let colorClass = tColors.o50;
-          if (isActive) colorClass = tColors.base;
-          if (isPast) colorClass = tColors.o30;
+            let colorClass = tColors.o50;
+            let subColorClass = tColors.o40;
+            if (isActive) {
+              colorClass = tColors.base;
+              subColorClass = tColors.o70;
+            } else if (isPast) {
+              colorClass = tColors.o30;
+              subColorClass = tColors.o30;
+            }
 
-          let sizeClass = fontSize.inactive;
-          if (isActive) sizeClass = fontSize.active;
-
-          return (
-            <p
-              key={i}
-              ref={isActive ? activeRef : null}
-              className={`lyric-line py-2 cursor-default select-none
-    ${colorClass} ${sizeClass}
-    ${isActive ? "font-semibold" : "font-normal"}
-    ${
-      isTransparent
-        ? `${isActive ? "px-4" : "px-2"} ${i === 0 ? "rounded-t-lg" : ""} ${i === lyrics.lines.length - 1 ? "rounded-b-lg" : ""}`
-        : ""
-    }`}
-              style={
-                isTransparent
-                  ? {
-                      backgroundColor: isActive
-                        ? "rgba(0,0,0,0.45)"
-                        : "rgba(0,0,0,0.2)",
-                      backdropFilter: "blur(6px)",
-                      WebkitBackdropFilter: "blur(6px)",
-                      display: "block",
-                      width: "100%",
-                      paddingTop: isActive ? "10px" : undefined,
-                      paddingBottom: isActive ? "10px" : undefined,
-                    }
-                  : {}
-              }
-            >
-              {line.text?.trim() || "♪"}
-            </p>
-          );
-        })}
+            return (
+              <LyricLine
+                key={i}
+                text={line.text}
+                translation={line.translation}
+                showTranslation={hasTranslation && showTranslation}
+                isActive={isActive}
+                isPast={isPast}
+                isTransparent={isTransparent}
+                bouncy={bouncy}
+                colorClass={colorClass}
+                sizeClass={isActive ? fontSize.active : fontSize.inactive}
+                subColorClass={subColorClass}
+                subSizeClass={isActive ? fontSize.subActive : fontSize.subInactive}
+                activeRef={activeRef}
+              />
+            );
+          })}
+        </div>
         {/* Bottom padding so last line can center */}
         <div className="h-[50vh]" />
       </div>
 
-      {/* ---- Hover control bar (AFTER drag area in DOM so no-drag wins in hit-test) ---- */}
+      {/* ---- Hover control bar ---- */}
       <div
-        className={`drag absolute top-0 left-0 right-0 z-50 px-4 py-3 flex flex-nowrap items-center gap-2
-          bg-black/60 backdrop-blur-md transition-all duration-300
-          ${hovering ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-full pointer-events-none"}`}
+        onMouseEnter={() => setHovering(true)}
+        className={`no-drag cursor-grab active:cursor-grabbing absolute top-0 left-0 right-0 z-50 px-4 py-3 flex flex-nowrap items-center gap-2
+          bg-black/60 transition-opacity duration-200
+          ${
+            hovering
+              ? "backdrop-blur-md opacity-100"
+              : "opacity-0 pointer-events-none"
+          }`}
       >
         {/* Song info */}
-        <div className="flex-1 min-w-[120px]">
+        <div className="flex-1 min-w-[100px]">
           <p className={`${tColors.base} text-sm font-semibold truncate`}>
             {song.title}
           </p>
           <p className={`${tColors.o60} text-xs truncate`}>{song.artist}</p>
         </div>
 
+        {/* Translate toggle (ONLY shown when song language differs from user's preferredLanguage) */}
+        {hasTranslation && (
+          <button
+            onClick={toggleTranslation}
+            className={`no-drag cursor-pointer flex-shrink-0 text-xs px-2 py-1 rounded font-medium transition-colors ${
+              showTranslation
+                ? "bg-green-500 text-black hover:bg-green-400"
+                : `bg-white/10 hover:bg-white/20 ${tColors.base}`
+            }`}
+            title="Toggle lyrics translation"
+          >
+            TRANSLATE
+          </button>
+        )}
+
         {/* Clear / Transparent toggle */}
         <button
           onClick={toggleTransparent}
-          className={`no-drag flex-shrink-0 text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 ${tColors.base} font-medium transition-colors`}
+          className={`no-drag cursor-pointer flex-shrink-0 text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 ${tColors.base} font-medium transition-colors`}
           title="Toggle transparent background"
         >
           {isTransparent ? "FILL" : "CLEAR"}
@@ -297,36 +664,40 @@ export default function LyricsWindow() {
         {/* Settings gear */}
         <button
           onClick={() => window.electronAPI?.openSettings()}
-          className={`no-drag flex-shrink-0 ${tColors.o70} ${tColors.hover} transition-colors`}
+          className={`no-drag cursor-pointer flex-shrink-0 ${tColors.o70} ${tColors.hover} transition-colors`}
           title="Settings"
         >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
+          <Settings size={18} />
         </button>
 
         {/* Close */}
         <CloseButton
-          className={`no-drag flex-shrink-0 ${tColors.o70} ${tColors.hover} transition-colors`}
+          className={`no-drag cursor-pointer flex-shrink-0 ${tColors.o70} ${tColors.hover} transition-colors`}
           size={18}
         />
       </div>
 
-      {/* Synced indicator */}
+      {/* ---- Floating "Sync" button on bottom-right when user manually scrolled on synced lyrics ---- */}
+      {lyrics.synced && userScrolled && (
+        <button
+          onClick={handleResync}
+          className="no-drag absolute bottom-4 right-4 z-50 flex items-center gap-1.5 px-3.5 py-2 rounded-full
+            bg-green-500 hover:bg-green-400 active:scale-95 text-black text-xs font-semibold
+            shadow-lg shadow-black/40 transition-all duration-200 cursor-pointer"
+          title="Return to current synced lyric"
+        >
+          <LocateFixed size={14} />
+          <span>Sync</span>
+        </button>
+      )}
+
+      {/* Unsynced indicator */}
       {!lyrics.synced && (
-        <div className={`absolute bottom-3 right-3 ${tColors.o30} text-xs flex items-center gap-0 flex-col bg-black/10 backdrop-blur-sm p-2  rounded-lg`}>
-          <TriangleAlert className="text-amber-500 opacity-80" /> 
-          <p className="text-amber-500 text-xs opacity-80 mt-1" >Unsynced lyrics</p>
+        <div
+          className={`absolute bottom-3 right-3 ${tColors.o30} text-xs flex items-center gap-0 flex-col bg-black/10 backdrop-blur-sm p-2 rounded-lg`}
+        >
+          <TriangleAlert className="text-amber-500 opacity-80" />
+          <p className="text-amber-500 text-xs opacity-80 mt-1">Unsynced lyrics</p>
           <p className={`${tColors.o30} text-xs opacity-80`}>you can scroll</p>
         </div>
       )}

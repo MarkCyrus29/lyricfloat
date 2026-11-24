@@ -1,18 +1,26 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { DEFAULT_SETTINGS } from './defaults.js'
 
 const AppContext = createContext(null)
 
 export function AppProvider({ children }) {
   const [song, setSong] = useState(null)
-  const [playback, setPlayback] = useState({ isPlaying: false, positionMs: 0 })
+  const [isPlaying, setIsPlaying] = useState(false)
   const [lyrics, setLyrics] = useState(null)
   const [lyricsLoading, setLyricsLoading] = useState(false)
   const [settings, setSettingsState] = useState(DEFAULT_SETTINGS)
 
   // Ref for the high-frequency interpolated position to prevent React render thrashing
   const playbackRef = useRef({ isPlaying: false, positionMs: 0, lastUpdateTime: performance.now() })
+  const playbackListenersRef = useRef(new Set())
   const prevSongRef = useRef(null)
+
+  const subscribePlayback = useCallback((fn) => {
+    playbackListenersRef.current.add(fn)
+    return () => {
+      playbackListenersRef.current.delete(fn)
+    }
+  }, [])
 
   // Load initial settings
   useEffect(() => {
@@ -51,8 +59,8 @@ export function AppProvider({ children }) {
           setLyricsLoading(true)
         }
         setSong((current) => {
-          return changed 
-            ? { ...data, albumColor: data.albumColor || null, textColor: data.textColor || 'white' } 
+          return changed
+            ? { ...data, albumColor: data.albumColor || null, textColor: data.textColor || 'white' }
             : { ...current, albumColor: data.albumColor ?? current?.albumColor, textColor: data.textColor ?? current?.textColor }
         })
       })
@@ -60,23 +68,18 @@ export function AppProvider({ children }) {
 
     unsubs.push(
       api.onPlaybackChanged((data) => {
-        const now = performance.now();
-        
         playbackRef.current = {
           isPlaying: data.isPlaying,
           positionMs: data.positionMs,
-          lastUpdateTime: now
-        };
+          lastUpdateTime: performance.now()
+        }
 
-        setPlayback((prev) => {
-          // Only update React state if play state changes or if it drifted a lot
-          // This stops the app from fully re-rendering 10 times a second
-          const timeDrift = Math.abs(prev.positionMs - data.positionMs);
-          if (prev.isPlaying !== data.isPlaying || timeDrift > 3000) {
-            return data;
-          }
-          return prev;
-        });
+        // Only update React state when play/pause changes; position drifts notify imperative subscribers
+        setIsPlaying((prev) => (prev !== data.isPlaying ? data.isPlaying : prev))
+
+        for (const fn of playbackListenersRef.current) {
+          fn(playbackRef.current)
+        }
       })
     )
 
@@ -103,12 +106,15 @@ export function AppProvider({ children }) {
     if (api) await api.setSetting(key, value)
   }, [])
 
+  const playback = useMemo(() => ({ isPlaying }), [isPlaying])
+
   return (
     <AppContext.Provider
       value={{
         song,
         playback,
         playbackRef,
+        subscribePlayback,
         lyrics,
         lyricsLoading,
         settings,

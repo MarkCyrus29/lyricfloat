@@ -1,5 +1,5 @@
 import { spawn } from 'child_process'
-import { writeFileSync } from 'fs'
+import { readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
 
@@ -32,6 +32,11 @@ $null = $netTask.Wait(-1)
 $sessionManager = $netTask.Result
 
 $lastSourceApp = ''
+$lastOutputSig = ''
+$lastEmitTime = [DateTimeOffset]::MinValue
+$lastPosMs = 0L
+$lastFallbackSig = ''
+$fallbackRepeat = 0
 
 while ($true) {
     $session = $null
@@ -40,15 +45,13 @@ while ($true) {
     try {
         $sessions = $sessionManager.GetSessions()
         if ($sessions.Count -gt 0) {
-            $playing = @($sessions | Where-Object { $_.GetPlaybackInfo().PlaybackStatus -eq 'Playing' })
-            if ($playing.Count -gt 0) {
-                $session = $playing[0]
-                if ($playing.Count -gt 1 -and $lastSourceApp -ne '') {
-                    foreach ($s in $playing) {
-                        if ($s.SourceAppUserModelId -eq $lastSourceApp) {
-                            $session = $s
-                            break
-                        }
+            foreach ($s in $sessions) {
+                if ($s.GetPlaybackInfo().PlaybackStatus -eq 'Playing') {
+                    if ($null -eq $session) {
+                        $session = $s
+                    } elseif ($lastSourceApp -ne '' -and $s.SourceAppUserModelId -eq $lastSourceApp) {
+                        $session = $s
+                        break
                     }
                 }
             }
@@ -62,20 +65,52 @@ while ($true) {
 
     # If no SMTC session at all, fallback to window title scraping
     if ($null -eq $session) {
-        $procs = Get-Process spotify, chrome, msedge, firefox -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -ne '' }
+        $lastOutputSig = ''
+        $fbLines = [System.Collections.Generic.List[string]]::new()
+        $procs = Get-Process -Name spotify, chrome, msedge, firefox -ErrorAction SilentlyContinue
         foreach ($p in $procs) {
-            Write-Output "FALLBACK_DATA|||$($p.ProcessName)|||$($p.MainWindowTitle)"
+            try {
+                $wt = $p.MainWindowTitle
+                if ($wt) {
+                    $fbLines.Add("FALLBACK_DATA|||$($p.ProcessName)|||$wt")
+                }
+            } finally {
+                $p.Dispose()
+            }
         }
-        Write-Output "FALLBACK_END|||"
-        [Console]::Out.Flush()
-        Start-Sleep -Milliseconds 1000
+
+        $fbSig = [string]::Join("\`n", $fbLines)
+        if ($fbSig -ne $lastFallbackSig) {
+            $lastFallbackSig = $fbSig
+            $fallbackRepeat = 1
+        } else {
+            $fallbackRepeat++
+        }
+
+        # Emit on change and once more to satisfy confirmation threshold, then stay silent while unchanged
+        if ($fallbackRepeat -le 2) {
+            foreach ($l in $fbLines) {
+                Write-Output $l
+            }
+            Write-Output "FALLBACK_END|||"
+            [Console]::Out.Flush()
+        }
+
+        Start-Sleep -Milliseconds 2000
         continue
     }
+
+    $lastFallbackSig = ''
+    $fallbackRepeat = 0
 
     $mediaAsync = $session.TryGetMediaPropertiesAsync()
     $netTask2 = $asTask2.Invoke($null, @($mediaAsync))
     $null = $netTask2.Wait(-1)
     $mediaProps = $netTask2.Result
+    if ($null -eq $mediaProps) {
+        Start-Sleep -Milliseconds 500
+        continue
+    }
 
     $timeline = $session.GetTimelineProperties()
     $playbackInfo = $session.GetPlaybackInfo()
@@ -89,24 +124,52 @@ while ($true) {
     $lastSourceApp = $sourceApp
 
     # Duration
-    $durationMs = 0
+    $durationMs = 0L
     try {
         $dur = ($timeline.EndTime - $timeline.StartTime).TotalMilliseconds
         if ($dur -gt 0) { $durationMs = [long]$dur }
     } catch {}
 
+    $now = [DateTimeOffset]::UtcNow
+
     # Extrapolate actual position to eliminate 1-2s lag
     if ($isPlaying -and $null -ne $timeline.LastUpdatedTime) {
-        $now = [DateTimeOffset]::UtcNow
         $diff = ($now - $timeline.LastUpdatedTime).TotalMilliseconds
         if ($diff -gt 0) {
             $positionMs += [long]$diff
         }
     }
 
-    Write-Output "SMTC_DATA|||$title|||$artist|||$isPlaying|||$positionMs|||$durationMs|||$sourceApp|||$album"
-    [Console]::Out.Flush()
-    Start-Sleep -Milliseconds 500
+    # Delta-emit: avoid waking Node/Electron IPC when nothing changed
+    $sig = "$title|||$artist|||$isPlaying|||$durationMs|||$sourceApp|||$album"
+    $shouldEmit = $false
+    if ($sig -ne $lastOutputSig) {
+        $shouldEmit = $true
+    } else {
+        $elapsed = ($now - $lastEmitTime).TotalMilliseconds
+        if ($isPlaying) {
+            $expected = $lastPosMs + $elapsed
+            if ([Math]::Abs($positionMs - $expected) -gt 1500 -or $elapsed -ge 9000) {
+                $shouldEmit = $true
+            }
+        } elseif ([Math]::Abs($positionMs - $lastPosMs) -gt 1500) {
+            $shouldEmit = $true
+        }
+    }
+
+    if ($shouldEmit) {
+        $lastOutputSig = $sig
+        $lastEmitTime = $now
+        $lastPosMs = $positionMs
+        Write-Output "SMTC_DATA|||$sig|||$positionMs"
+        [Console]::Out.Flush()
+    }
+
+    if ($isPlaying) {
+        Start-Sleep -Milliseconds 500
+    } else {
+        Start-Sleep -Milliseconds 1500
+    }
 }
 `.trim()
 
@@ -118,23 +181,33 @@ export function startSMTCBridge(onSongChanged) {
 
   const smtcScriptPath = join(app.getPath('userData'), 'lyricfloat_smtc_loop.ps1')
   try {
-    writeFileSync(smtcScriptPath, SMTC_SCRIPT)
+    let existing = null
+    try {
+      existing = readFileSync(smtcScriptPath, 'utf8')
+    } catch {}
+    if (existing !== SMTC_SCRIPT) {
+      writeFileSync(smtcScriptPath, SMTC_SCRIPT, 'utf8')
+    }
   } catch (e) {}
 
-  // Start persistent powershell process
-  psChild = spawn('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', smtcScriptPath])
+  // Start persistent powershell process hidden
+  psChild = spawn(
+    'powershell',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', smtcScriptPath],
+    { windowsHide: true }
+  )
 
   let buffer = ''
   psChild.stdout.on('data', (data) => {
     buffer += data.toString()
-    let lines = buffer.split('\n')
+    const lines = buffer.split('\n')
     buffer = lines.pop() // keep incomplete line
-    
+
     for (let line of lines) {
       line = line.trim()
       if (!line) continue
-      
-      // Handle SMTC Data
+
+      // Handle SMTC Data: SMTC_DATA|||$title|||$artist|||$isPlaying|||$durationMs|||$sourceApp|||$album|||$positionMs
       if (line.startsWith('SMTC_DATA|||')) {
         activeFallbackKey = ''
         pendingFallbackKey = null
@@ -142,20 +215,20 @@ export function startSMTCBridge(onSongChanged) {
         fallbackLines = []
         const parts = line.split('|||')
         if (parts.length < 8) continue
-        const durationMs = parseInt(parts[5], 10) || 0
+        const durationMs = parseInt(parts[4], 10) || 0
         const info = {
           title: parts[1],
           artist: parts[2],
           isPlaying: parts[3] === 'True',
-          positionMs: parseInt(parts[4], 10) || 0,
+          positionMs: parseInt(parts[7], 10) || 0,
           durationMs: durationMs > 0 ? durationMs : null,
-          sourceApp: parts[6] || null,
-          album: parts[7] || null
+          sourceApp: parts[5] || null,
+          album: parts[6] || null
         }
         onSongChanged(info)
         continue
       }
-      
+
       // Handle Fallback Title Data
       if (line.startsWith('FALLBACK_DATA|||')) {
         fallbackLines.push(line)
@@ -171,7 +244,6 @@ export function startSMTCBridge(onSongChanged) {
 
           let info = null
           const procLower = proc.toLowerCase()
-          // Spotify: "Artist - Title" or "Title - Artist" or "Spotify Premium"
           if (procLower.includes('spotify') && windowTitle.includes(' - ')) {
             const dashIdx = windowTitle.indexOf(' - ')
             info = {
@@ -183,15 +255,13 @@ export function startSMTCBridge(onSongChanged) {
               sourceApp: proc,
               album: null
             }
-          }
-          // Browser: often "Title - YouTube" or "Song • Artist" etc.
-          else if (windowTitle.includes(' - YouTube')) {
-            const raw = windowTitle.replace(' - YouTube', '').trim()
-            const dashIdx = raw.lastIndexOf(' - ')
+          } else if (windowTitle.includes(' - YouTube')) {
+            const clean = windowTitle.replace(' - YouTube', '').trim()
+            const dashIdx = clean.lastIndexOf(' - ')
             if (dashIdx > 0) {
               info = {
-                title: raw.slice(0, dashIdx).trim(),
-                artist: raw.slice(dashIdx + 3).trim(),
+                title: clean.slice(0, dashIdx).trim(),
+                artist: clean.slice(dashIdx + 3).trim(),
                 isPlaying: true,
                 positionMs: 0,
                 durationMs: null,
@@ -252,11 +322,12 @@ export function startSMTCBridge(onSongChanged) {
   })
 
   psChild.stderr.on('data', (data) => {
-    console.error("SMTC child stderr:", data.toString())
+    console.error('SMTC child stderr:', data.toString())
   })
-  
+
   psChild.on('close', (code) => {
-    console.log("SMTC process exited with code", code)
+    buffer = ''
+    console.log('SMTC process exited with code', code)
   })
 }
 

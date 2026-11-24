@@ -1,10 +1,12 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell, powerMonitor } from 'electron'
 import { join } from 'path'
 import fs from 'fs'
 import Store from 'electron-store'
 import { startMediaBridge, stopMediaBridge } from './mediaBridge.js'
 import { getAlbumColor } from './lyricsAPI.js'
 import { getLyricsForSong } from './lyrics/index.js'
+import { enrichLyricsWithTranslation } from './lyrics/translator.js'
+import { flushCache } from './lyrics/cache.js'
 import { getTextColorForBackground } from './colorUtils.js'
 import { buildLookupCandidates } from './titleCleaner.js'
 import { classifySource } from './sourceProfiles.js'
@@ -19,9 +21,25 @@ const store = new Store({
     opacity: 0.92,
     bgColor: 'rgba(18,18,18,0.92)',
     bgMode: 'album',
+    bouncyLyrics: true,
+    preferredLanguage: 'en',
+    showTranslation: true,
     lyricsBounds: { width: 420, height: 600 }
   }
 })
+
+// In-memory settings cache to avoid synchronous fs.readFileSync + JSON.parse on every playback tick
+const settingsCache = {
+  alwaysOnTop: store.get('alwaysOnTop', true),
+  hideWhenPaused: store.get('hideWhenPaused', false),
+  fontSize: store.get('fontSize', 'medium'),
+  opacity: store.get('opacity', 0.92),
+  bgColor: store.get('bgColor', 'rgba(18,18,18,0.92)'),
+  bgMode: store.get('bgMode', 'album'),
+  bouncyLyrics: store.get('bouncyLyrics', true),
+  preferredLanguage: store.get('preferredLanguage', 'en'),
+  showTranslation: store.get('showTranslation', true)
+}
 
 let lyricsWindow = null
 let settingsWindow = null
@@ -39,10 +57,6 @@ let songAbortController = null
 /*  Display / bounds utilities                                        */
 /* ------------------------------------------------------------------ */
 
-/**
- * Returns true if the rectangle {x, y, width, height} overlaps at least
- * one of the currently connected displays' work areas by at least 1 pixel.
- */
 function boundsOnScreen(bounds) {
   const displays = screen.getAllDisplays()
   return displays.some((d) => {
@@ -56,15 +70,6 @@ function boundsOnScreen(bounds) {
   })
 }
 
-/**
- * Validates saved window bounds against current displays.
- * If the saved position is off-screen, returns centered coords on the primary
- * display and persists the corrected position to the store so it self-heals.
- *
- * @param {{ width: number, height: number }} size
- * @param {{ x: number, y: number } | null} pos
- * @returns {{ x: number | undefined, y: number | undefined }}
- */
 function validateAndGetPosition(size, pos) {
   if (!pos) return { x: undefined, y: undefined }
 
@@ -73,7 +78,6 @@ function validateAndGetPosition(size, pos) {
     return { x: pos.x, y: pos.y }
   }
 
-  // Saved position is off-screen — fall back to primary display centre
   console.log('[LyricFloat] Saved window position is off-screen; resetting to primary display.')
   const wa = screen.getPrimaryDisplay().workArea
   const safeX = Math.round(wa.x + (wa.width - size.width) / 2)
@@ -82,10 +86,6 @@ function validateAndGetPosition(size, pos) {
   return { x: safeX, y: safeY }
 }
 
-/**
- * If lyricsWindow is currently positioned off all connected displays,
- * move it to the centre of the primary display.
- */
 function ensureLyricsWindowOnScreen() {
   if (!lyricsWindow || lyricsWindow.isDestroyed()) return
   const b = lyricsWindow.getBounds()
@@ -115,7 +115,7 @@ function createLyricsWindow() {
     y: safePos.y,
     frame: false,
     transparent: true,
-    alwaysOnTop: store.get('alwaysOnTop', true),
+    alwaysOnTop: settingsCache.alwaysOnTop,
     skipTaskbar: true,
     resizable: true,
     hasShadow: false,
@@ -136,12 +136,30 @@ function createLyricsWindow() {
   // Track cursor position to detect hover over the window
   // (drag regions block all DOM mouse events, so we must poll at the OS level)
   let cursorInside = false
-  const cursorTracker = setInterval(() => {
-    if (!lyricsWindow || lyricsWindow.isDestroyed()) {
-      clearInterval(cursorTracker)
+  let cursorTracker = null
+  let lastHitTestRefreshAt = Date.now()
+
+  // Refreshes Electron's native WM_NCHITTEST draggable region mask after long idle/DWM sleep
+  // without changing the visible window size, fixing the bug where buttons stop responding
+  // until the window is manually resized.
+  const refreshWindowHitTest = () => {
+    if (!lyricsWindow || lyricsWindow.isDestroyed() || !lyricsWindow.isVisible() || lyricsWindow.isMinimized()) {
       return
     }
-    if (!lyricsWindow.isVisible()) return
+    const now = Date.now()
+    // Only need to kick native hit-test regions if idle for > 30s
+    if (now - lastHitTestRefreshAt < 30000) return
+    lastHitTestRefreshAt = now
+    try {
+      const b = lyricsWindow.getBounds()
+      lyricsWindow.setBounds({ x: b.x, y: b.y, width: b.width + 1, height: b.height })
+      lyricsWindow.setBounds(b)
+    } catch {}
+  }
+
+  const checkCursor = (forceSend = false) => {
+    if (!lyricsWindow || lyricsWindow.isDestroyed()) return
+    if (!lyricsWindow.isVisible() || lyricsWindow.isMinimized()) return
     const point = screen.getCursorScreenPoint()
     const wb = lyricsWindow.getBounds()
     const inside =
@@ -150,28 +168,80 @@ function createLyricsWindow() {
       point.y >= wb.y &&
       point.y <= wb.y + wb.height
 
-    if (inside !== cursorInside) {
+    if (inside !== cursorInside || forceSend) {
+      if (inside && !cursorInside) {
+        refreshWindowHitTest()
+      } else if (!inside) {
+        lastHitTestRefreshAt = lastHitTestRefreshAt // keep timestamp so next enter after idle refreshes
+      }
       cursorInside = inside
       lyricsWindow.webContents.send(
         inside ? 'window:mouse-enter' : 'window:mouse-leave'
       )
     }
-  }, 250)
+  }
 
-  lyricsWindow.on('close', () => {
-    clearInterval(cursorTracker)
-    const b = lyricsWindow.getBounds()
-    store.set('lyricsBounds', { width: b.width, height: b.height })
-    store.set('lyricsPosition', { x: b.x, y: b.y })
+  const startCursorTracker = () => {
+    if (cursorTracker || !lyricsWindow || lyricsWindow.isDestroyed()) return
+    checkCursor(true)
+    cursorTracker = setInterval(() => {
+      if (!lyricsWindow || lyricsWindow.isDestroyed()) {
+        stopCursorTracker()
+        return
+      }
+      checkCursor(false)
+    }, 200)
+  }
+
+  const stopCursorTracker = () => {
+    if (cursorTracker) {
+      clearInterval(cursorTracker)
+      cursorTracker = null
+    }
+    if (cursorInside && lyricsWindow && !lyricsWindow.isDestroyed()) {
+      cursorInside = false
+      lyricsWindow.webContents.send('window:mouse-leave')
+    }
+  }
+
+  startCursorTracker()
+
+  lyricsWindow.on('hide', stopCursorTracker)
+  lyricsWindow.on('minimize', stopCursorTracker)
+  lyricsWindow.on('show', () => {
+    lastHitTestRefreshAt = 0
+    refreshWindowHitTest()
+    startCursorTracker()
+  })
+  lyricsWindow.on('restore', () => {
+    lastHitTestRefreshAt = 0
+    refreshWindowHitTest()
+    startCursorTracker()
+  })
+  lyricsWindow.on('focus', () => {
+    refreshWindowHitTest()
+    checkCursor(true)
   })
 
-  lyricsWindow.on('closed', () => { lyricsWindow = null })
+  lyricsWindow.on('close', () => {
+    stopCursorTracker()
+    const b = lyricsWindow.getBounds()
+    store.set({
+      lyricsBounds: { width: b.width, height: b.height },
+      lyricsPosition: { x: b.x, y: b.y }
+    })
+  })
+
+  lyricsWindow.on('closed', () => {
+    stopCursorTracker()
+    lyricsWindow = null
+  })
 
   return lyricsWindow
 }
 
 function createSettingsWindow() {
-  if (settingsWindow) {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.focus()
     return settingsWindow
   }
@@ -206,18 +276,21 @@ function createSettingsWindow() {
 /*  System Tray                                                       */
 /* ------------------------------------------------------------------ */
 function createTray() {
-  let iconPath;
+  let iconPath
   if (app.isPackaged) {
-    iconPath = join(process.resourcesPath, 'icon.png');
+    iconPath = join(process.resourcesPath, 'icon.png')
   } else {
-    iconPath = join(__dirname, '../../build/icon.png');
+    iconPath = join(__dirname, '../../build/icon.png')
   }
 
-  let icon;
+  let icon
   if (fs.existsSync(iconPath)) {
-    icon = nativeImage.createFromPath(iconPath);
+    icon = nativeImage.createFromPath(iconPath)
+    const size = icon.getSize()
+    if (size.width > 32 || size.height > 32) {
+      icon = icon.resize({ width: 32, height: 32, quality: 'good' })
+    }
   } else {
-    // Fallback to simple 16x16 tray icon programmatically
     icon = nativeImage.createFromDataURL(
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAMElEQVQ4T2P8z8BQz0BAwMDAwMDIQCRg' +
       'YGBgYPj//389AwODADEaR8NgNAxGfBgAAOJBD/Hy8bUAAAAASUVORK5CYII='
@@ -231,7 +304,7 @@ function createTray() {
     {
       label: 'Show Lyrics Window',
       click: () => {
-        if (lyricsWindow) {
+        if (lyricsWindow && !lyricsWindow.isDestroyed()) {
           lyricsWindow.show()
           lyricsWindow.focus()
         }
@@ -253,14 +326,42 @@ function createTray() {
 
   tray.setContextMenu(contextMenu)
   tray.on('click', () => {
-    if (lyricsWindow) {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
       lyricsWindow.show()
       lyricsWindow.focus()
     }
   })
 }
 
-const ALLOWED_SETTINGS_KEYS = new Set(['alwaysOnTop', 'hideWhenPaused', 'fontSize', 'opacity', 'bgColor', 'bgMode'])
+const ALLOWED_SETTINGS_KEYS = new Set([
+  'alwaysOnTop',
+  'hideWhenPaused',
+  'fontSize',
+  'opacity',
+  'bgColor',
+  'bgMode',
+  'bouncyLyrics',
+  'preferredLanguage',
+  'showTranslation'
+])
+
+let rawCurrentLyrics = null
+
+async function retranslateCurrentLyrics(lang) {
+  if (!rawCurrentLyrics || !rawCurrentLyrics.lines || rawCurrentLyrics.lines.length === 0) return
+  const seq = lookupSeq
+  const signal = songAbortController?.signal
+  const enriched = await enrichLyricsWithTranslation(rawCurrentLyrics, lang, { signal })
+  if (seq !== lookupSeq) return
+  currentLyrics = enriched
+  sendToLyrics('lyrics:loaded', enriched)
+}
+
+function sendToLyrics(channel, payload) {
+  if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    lyricsWindow.webContents.send(channel, payload)
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /*  IPC Handlers                                                      */
@@ -268,62 +369,78 @@ const ALLOWED_SETTINGS_KEYS = new Set(['alwaysOnTop', 'hideWhenPaused', 'fontSiz
 function setupIPC() {
   ipcMain.handle('store:get', (_event, key) => {
     if (!ALLOWED_SETTINGS_KEYS.has(key)) return undefined
-    return store.get(key)
+    return settingsCache[key]
   })
-  ipcMain.handle('store:get-all', () => ({
-    alwaysOnTop: store.get('alwaysOnTop'),
-    hideWhenPaused: store.get('hideWhenPaused'),
-    fontSize: store.get('fontSize'),
-    opacity: store.get('opacity'),
-    bgColor: store.get('bgColor'),
-    bgMode: store.get('bgMode')
-  }))
+  ipcMain.handle('store:get-all', () => ({ ...settingsCache }))
   ipcMain.handle('store:set', (_event, key, value) => {
     if (!ALLOWED_SETTINGS_KEYS.has(key)) return false
+    settingsCache[key] = value
     store.set(key, value)
     return true
   })
 
   ipcMain.handle('settings:preview', (_event, key, value) => {
     if (!ALLOWED_SETTINGS_KEYS.has(key)) return false
-    if (lyricsWindow) lyricsWindow.webContents.send('settings:changed', { key, value })
-    if (key === 'alwaysOnTop' && lyricsWindow) lyricsWindow.setAlwaysOnTop(!!value)
+    sendToLyrics('settings:changed', { key, value })
+    if (key === 'alwaysOnTop' && lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.setAlwaysOnTop(!!value)
+    }
+    if (key === 'preferredLanguage' && typeof value === 'string') {
+      retranslateCurrentLyrics(value)
+    }
     return true
   })
 
   ipcMain.handle('settings:save', (_event, settings) => {
     if (!settings || typeof settings !== 'object') return false
+    const prevLang = settingsCache.preferredLanguage
+    const updates = {}
     for (const [key, value] of Object.entries(settings)) {
       if (!ALLOWED_SETTINGS_KEYS.has(key)) continue
-      store.set(key, value)
-      if (lyricsWindow) lyricsWindow.webContents.send('settings:changed', { key, value })
+      settingsCache[key] = value
+      updates[key] = value
+      sendToLyrics('settings:changed', { key, value })
     }
-    if (settings.alwaysOnTop !== undefined && lyricsWindow) {
+    if (Object.keys(updates).length > 0) {
+      store.set(updates)
+    }
+    if (settings.alwaysOnTop !== undefined && lyricsWindow && !lyricsWindow.isDestroyed()) {
       lyricsWindow.setAlwaysOnTop(!!settings.alwaysOnTop)
     }
-    if (settingsWindow) settingsWindow.close()
+    if (settings.preferredLanguage && settings.preferredLanguage !== prevLang) {
+      retranslateCurrentLyrics(settings.preferredLanguage)
+    }
+    if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.close()
     return true
   })
 
   ipcMain.handle('settings:revert', (_event, settings) => {
-    for (const [key, value] of Object.entries(settings)) {
-      if (lyricsWindow) lyricsWindow.webContents.send('settings:changed', { key, value })
+    if (settings && typeof settings === 'object') {
+      for (const [key, value] of Object.entries(settings)) {
+        if (!ALLOWED_SETTINGS_KEYS.has(key)) continue
+        sendToLyrics('settings:changed', { key, value })
+      }
+      if (settings.alwaysOnTop !== undefined && lyricsWindow && !lyricsWindow.isDestroyed()) {
+        lyricsWindow.setAlwaysOnTop(!!settings.alwaysOnTop)
+      }
+      if (settings.preferredLanguage) {
+        retranslateCurrentLyrics(settings.preferredLanguage)
+      }
     }
-    if (settings.alwaysOnTop !== undefined && lyricsWindow) {
-      lyricsWindow.setAlwaysOnTop(!!settings.alwaysOnTop)
-    }
-    if (settingsWindow) settingsWindow.close()
+    if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.close()
     return true
   })
 
   ipcMain.handle('window:setOpacity', (_event, value) => {
-    if (lyricsWindow) lyricsWindow.setOpacity(parseFloat(value))
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) lyricsWindow.setOpacity(parseFloat(value))
     return true
   })
 
   ipcMain.handle('window:setAlwaysOnTop', (_event, value) => {
-    if (lyricsWindow) lyricsWindow.setAlwaysOnTop(!!value)
-    store.set('alwaysOnTop', !!value)
+    const flag = !!value
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) lyricsWindow.setAlwaysOnTop(flag)
+    settingsCache.alwaysOnTop = flag
+    store.set('alwaysOnTop', flag)
     return true
   })
 
@@ -333,7 +450,7 @@ function setupIPC() {
   })
 
   ipcMain.handle('window:closeSettings', () => {
-    if (settingsWindow) settingsWindow.close()
+    if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.close()
     return true
   })
 
@@ -343,10 +460,59 @@ function setupIPC() {
     return true
   })
 
+  // Full-window smooth drag handler so the entire window can be dragged while still allowing mouse-wheel scrolling
+  let dragInterval = null
+  const stopDragLoop = () => {
+    if (dragInterval) {
+      clearInterval(dragInterval)
+      dragInterval = null
+    }
+  }
+
+  ipcMain.on('window:startDrag', () => {
+    stopDragLoop()
+    if (!lyricsWindow || lyricsWindow.isDestroyed()) return
+    const startCursor = screen.getCursorScreenPoint()
+    const startBounds = lyricsWindow.getBounds()
+    let lastX = startCursor.x
+    let lastY = startCursor.y
+
+    dragInterval = setInterval(() => {
+      if (!lyricsWindow || lyricsWindow.isDestroyed()) {
+        stopDragLoop()
+        return
+      }
+      const pt = screen.getCursorScreenPoint()
+      if (pt.x !== lastX || pt.y !== lastY) {
+        lastX = pt.x
+        lastY = pt.y
+        lyricsWindow.setBounds({
+          x: startBounds.x + (pt.x - startCursor.x),
+          y: startBounds.y + (pt.y - startCursor.y),
+          width: startBounds.width,
+          height: startBounds.height
+        })
+      }
+    }, 8)
+  })
+
+  ipcMain.on('window:stopDrag', () => {
+    stopDragLoop()
+  })
+
   ipcMain.handle('lyrics:request-state', () => {
-    if (lyricsWindow) {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
       if (currentSongInfo) lyricsWindow.webContents.send('song:changed', currentSongInfo)
-      if (currentLyrics) lyricsWindow.webContents.send('lyrics:loaded', currentLyrics)
+      if (currentLyrics) {
+        lyricsWindow.webContents.send('lyrics:loaded', currentLyrics)
+        if (
+          currentLyrics.needsTranslation === undefined &&
+          currentLyrics.lines?.length > 0 &&
+          !currentLyrics.instrumental
+        ) {
+          retranslateCurrentLyrics(settingsCache.preferredLanguage || 'en')
+        }
+      }
       if (lastSentPlayback) {
         lyricsWindow.webContents.send('playback:changed', {
           isPlaying: lastSentPlayback.isPlaying,
@@ -376,7 +542,7 @@ function setupIPC() {
 /* ------------------------------------------------------------------ */
 function startSongDetection() {
   startMediaBridge(async (info) => {
-    if (!lyricsWindow) return
+    if (!lyricsWindow || lyricsWindow.isDestroyed()) return
 
     const now = Date.now()
     let shouldSendPlayback = false
@@ -399,7 +565,7 @@ function startSongDetection() {
         positionMs: info.positionMs,
         at: now
       }
-      lyricsWindow.webContents.send('playback:changed', {
+      sendToLyrics('playback:changed', {
         isPlaying: info.isPlaying,
         positionMs: info.positionMs
       })
@@ -407,8 +573,7 @@ function startSongDetection() {
 
     // If user paused and hideWhenPaused is on, toggle window on transition
     if (lastIsPlaying !== info.isPlaying) {
-      const hideWhenPaused = store.get('hideWhenPaused', false)
-      if (hideWhenPaused) {
+      if (settingsCache.hideWhenPaused) {
         if (!info.isPlaying) lyricsWindow.hide()
         else lyricsWindow.show()
       }
@@ -424,8 +589,8 @@ function startSongDetection() {
       songAbortController = new AbortController()
       const signal = songAbortController.signal
 
-      // Immediately clear old data so renderer shows loading state
       currentLyrics = null
+      rawCurrentLyrics = null
       const songInfo = {
         title: info.title,
         artist: info.artist,
@@ -434,38 +599,45 @@ function startSongDetection() {
         textColor: 'white'
       }
       currentSongInfo = songInfo
-      lyricsWindow.webContents.send('song:changed', songInfo)
+      sendToLyrics('song:changed', songInfo)
 
-      // Fetch lyrics and album color in parallel
-      const bgMode = store.get('bgMode', 'album')
+      const bgMode = settingsCache.bgMode || 'album'
+      const preferredLanguage = settingsCache.preferredLanguage || 'en'
       const category = classifySource(info.sourceApp)
       const candidates = buildLookupCandidates({ ...info, category })
       const firstCand = candidates[0] || { title: info.title, artist: info.artist }
-      const fetchColor = bgMode === 'album' ? getAlbumColor(firstCand.title, firstCand.artist) : Promise.resolve(null)
+      const fetchColor = bgMode === 'album'
+        ? getAlbumColor(firstCand.title, firstCand.artist, { signal })
+        : Promise.resolve(null)
 
       Promise.all([
         getLyricsForSong(info, candidates, { signal }),
         fetchColor
-      ]).then(([lyrics, color]) => {
+      ]).then(async ([lyrics, color]) => {
         if (seq !== lookupSeq || !lyrics) return
+        rawCurrentLyrics = lyrics
         currentLyrics = lyrics
         songInfo.albumColor = color
         songInfo.textColor = getTextColorForBackground(color)
         currentSongInfo = songInfo
-        
-        if (lyricsWindow) {
-          lyricsWindow.webContents.send('lyrics:loaded', lyrics)
-          // Always re-send song info so renderer picks up color (or null)
-          lyricsWindow.webContents.send('song:changed', songInfo)
+
+        // Send lyrics immediately so UI displays without waiting for translation network call
+        sendToLyrics('lyrics:loaded', lyrics)
+        sendToLyrics('song:changed', songInfo)
+
+        // Enrich with translations in background if lyrics have lines
+        if (lyrics.lines && lyrics.lines.length > 0 && !lyrics.instrumental) {
+          const enriched = await enrichLyricsWithTranslation(lyrics, preferredLanguage, { signal })
+          if (seq !== lookupSeq) return
+          currentLyrics = enriched
+          sendToLyrics('lyrics:loaded', enriched)
         }
       }).catch((err) => {
         console.error('[LyricFloat] Error fetching lyrics or color:', err)
         if (seq !== lookupSeq) return
         const emptyLyrics = { synced: false, lines: [], source: null, instrumental: false }
         currentLyrics = emptyLyrics
-        if (lyricsWindow) {
-          lyricsWindow.webContents.send('lyrics:loaded', emptyLyrics)
-        }
+        sendToLyrics('lyrics:loaded', emptyLyrics)
       })
     }
   })
@@ -478,15 +650,25 @@ app.whenReady().then(() => {
   setupIPC()
   createLyricsWindow()
   createTray()
-  
+
   if (lyricsWindow) {
     startSongDetection()
   }
 
-  // Live monitor-disconnect handling: reposition the lyrics window if its
-  // current display is unplugged while the app is running.
   screen.on('display-removed', () => ensureLyricsWindowOnScreen())
   screen.on('display-metrics-changed', () => ensureLyricsWindowOnScreen())
+
+  // When PC resumes from sleep or screen unlock, force a hit-test region refresh on the lyrics window
+  const onSystemWake = () => {
+    if (!lyricsWindow || lyricsWindow.isDestroyed() || !lyricsWindow.isVisible()) return
+    try {
+      const b = lyricsWindow.getBounds()
+      lyricsWindow.setBounds({ x: b.x, y: b.y, width: b.width + 1, height: b.height })
+      lyricsWindow.setBounds(b)
+    } catch {}
+  }
+  powerMonitor.on('resume', onSystemWake)
+  powerMonitor.on('unlock-screen', onSystemWake)
 
   app.on('activate', () => {
     if (!lyricsWindow) createLyricsWindow()
@@ -499,4 +681,5 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   stopMediaBridge()
+  flushCache()
 })

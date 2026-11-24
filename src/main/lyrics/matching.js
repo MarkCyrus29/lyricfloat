@@ -12,20 +12,36 @@ export function normalize(s) {
 }
 
 function levenshtein(a, b) {
+  if (a.length < b.length) {
+    const tmp = a
+    a = b
+    b = tmp
+  }
   const m = a.length
   const n = b.length
-  if (m === 0) return n
   if (n === 0) return m
-  const d = []
-  for (let i = 0; i <= m; i++) d[i] = [i]
-  for (let j = 0; j <= n; j++) d[0][j] = j
+
+  // 1D rolling Uint16Array uses O(min(m, n)) memory with zero nested array allocations
+  const row = new Uint16Array(n + 1)
+  for (let j = 0; j <= n; j++) row[j] = j
+
   for (let i = 1; i <= m; i++) {
+    let prevDiag = row[0]
+    row[0] = i
+    const chA = a.charCodeAt(i - 1)
     for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1
-      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+      const oldAbove = row[j]
+      const cost = chA === b.charCodeAt(j - 1) ? 0 : 1
+      const del = oldAbove + 1
+      const ins = row[j - 1] + 1
+      const sub = prevDiag + cost
+      let minVal = del < ins ? del : ins
+      if (sub < minVal) minVal = sub
+      row[j] = minVal
+      prevDiag = oldAbove
     }
   }
-  return d[m][n]
+  return row[n]
 }
 
 export function similarity(a, b) {
@@ -65,4 +81,3 @@ export function scoreCandidate(want, got) {
   const score = TITLE_WEIGHT * titleSim + ARTIST_WEIGHT * artistSim + DURATION_WEIGHT * durationScore
   return parseFloat(score.toFixed(4))
 }
-

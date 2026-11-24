@@ -21,31 +21,40 @@ function toResult(item) {
   }
 
   if (item.syncedLyrics && typeof item.syncedLyrics === 'string') {
-    const lines = parseLRC(item.syncedLyrics)
-    if (lines.length > 0) {
-      return {
-        source: 'lrclib',
-        synced: true,
-        lines,
-        title,
-        artist,
-        durationMs,
-        instrumental: false
-      }
+    const rawSynced = item.syncedLyrics
+    let parsed = null
+    return {
+      source: 'lrclib',
+      synced: true,
+      get lines() {
+        if (parsed === null) {
+          parsed = parseLRC(rawSynced)
+        }
+        return parsed
+      },
+      title,
+      artist,
+      durationMs,
+      instrumental: false
     }
   }
 
   if (item.plainLyrics && typeof item.plainLyrics === 'string') {
-    const lines = item.plainLyrics
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .filter(Boolean)
-      .map(text => ({ time: 0, text }))
-
+    const rawPlain = item.plainLyrics
+    let parsed = null
     return {
       source: 'lrclib',
       synced: false,
-      lines,
+      get lines() {
+        if (parsed === null) {
+          parsed = rawPlain
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(text => ({ time: 0, text }))
+        }
+        return parsed
+      },
       title,
       artist,
       durationMs,
@@ -105,4 +114,3 @@ export async function lookup(args) {
   }
   return await lookupSearch(args)
 }
-

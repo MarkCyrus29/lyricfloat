@@ -5,6 +5,8 @@ export const DEFAULT_SETTINGS = {
   fontSize: 'medium',
   opacity: 0.92,
   bgColor: 'rgba(18,18,18,0.92)',
-  bgMode: 'album'
+  bgMode: 'album',
+  bouncyLyrics: true,
+  preferredLanguage: 'en',
+  showTranslation: true
 }
-

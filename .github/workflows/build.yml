@@ -1,6 +1,7 @@
 name: Build & Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
@@ -25,6 +26,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run unit tests on macOS
+        run: npm test
+
+      - name: Validate macOS AppleScript compilation with osacompile
+        run: |
+          node --input-type=module -e "import { COMBINED_SCRIPT } from './src/main/macMediaBridge.js'; import fs from 'fs'; fs.writeFileSync('/tmp/lyricfloat_mac.applescript', COMBINED_SCRIPT);"
+          osacompile -o /tmp/lyricfloat_mac.scpt /tmp/lyricfloat_mac.applescript
+
       - name: Build & Package
         run: npm run package
         env:
@@ -40,6 +49,7 @@ jobs:
 
   release:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts

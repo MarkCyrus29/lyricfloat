@@ -31,6 +31,23 @@ const BRACKET_PAIRS = [
   ['《', '》']
 ]
 
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// Precompile bracket regexes once at module load instead of inside loops
+const BRACKET_REGEXES = BRACKET_PAIRS.map(([open, close]) => {
+  const escOpen = escapeRegex(open)
+  const escClose = escapeRegex(close)
+  return {
+    open,
+    close,
+    empty: new RegExp(`${escOpen}\\s*${escClose}`, 'g'),
+    inner: new RegExp(`${escOpen}([^${escOpen}${escClose}]+)${escClose}`, 'g'),
+    trailing: new RegExp(`\\s*${escOpen}([^${escOpen}${escClose}]+)${escClose}\\s*$`, 'i')
+  }
+})
+
 const JUNK_REGEXES = [
   /^official\s+(music\s+)?video$/i,
   /^official\s+(lyric\s+)?video$/i,
@@ -130,10 +147,8 @@ function removeUnmatchedBrackets(str) {
       }
     }
   }
-  for (const [open, close] of BRACKET_PAIRS) {
-    const escOpen = open.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const escClose = close.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    s = s.replace(new RegExp(`${escOpen}\\s*${escClose}`, 'g'), '')
+  for (const { empty } of BRACKET_REGEXES) {
+    s = s.replace(empty, '')
   }
   return s.replace(/\s+/g, ' ').trim()
 }
@@ -155,10 +170,7 @@ function stripJunkBrackets(str) {
   let changed = true
   while (changed) {
     changed = false
-    for (const [open, close] of BRACKET_PAIRS) {
-      const escOpen = open.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const escClose = close.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const reg = new RegExp(`${escOpen}([^${escOpen}${escClose}]+)${escClose}`, 'g')
+    for (const { inner: reg } of BRACKET_REGEXES) {
       s = s.replace(reg, (match, inner) => {
         if (isJunkText(inner)) {
           changed = true
@@ -211,10 +223,7 @@ function stripVersionSuffixes(str) {
   let changed = true
   while (changed) {
     changed = false
-    for (const [open, close] of BRACKET_PAIRS) {
-      const escOpen = open.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const escClose = close.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const reg = new RegExp(`\\s*${escOpen}([^${escOpen}${escClose}]+)${escClose}\\s*$`, 'i')
+    for (const { trailing: reg } of BRACKET_REGEXES) {
       const m = s.match(reg)
       if (m && isVersionText(m[1])) {
         s = s.replace(reg, '').trim()

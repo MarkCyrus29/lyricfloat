@@ -1,7 +1,7 @@
 import { app } from 'electron'
 
 function getUserAgent() {
-  const version = (app && typeof app.getVersion === 'function') ? app.getVersion() : '1.1.1'
+  const version = (app && typeof app.getVersion === 'function') ? app.getVersion() : '1.3.0'
   return `LyricFloat/${version} (https://github.com/MarkCyrus29/lyricfloat)`
 }
 
@@ -24,13 +24,15 @@ export async function fetchJson(url, { signal, timeoutMs = 5000, headers = {} } 
     })
 
     if (!res.ok) {
+      await res.body?.cancel?.()
       return null
     }
 
     return await res.json()
   } catch (err) {
-    console.debug(`[LyricFloat http] fetch failed for ${url}:`, err.message)
+    if (err?.name !== 'AbortError') {
+      console.debug(`[LyricFloat http] fetch failed for ${url}:`, err.message)
+    }
     return null
   }
 }
-

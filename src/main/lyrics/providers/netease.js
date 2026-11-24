@@ -1,6 +1,6 @@
 import { fetchJson } from '../http.js'
 import { parseLRC } from '../lrcParser.js'
-import { scoreCandidate } from '../matching.js'
+import { scoreCandidate, ACCEPT_THRESHOLD } from '../matching.js'
 
 export const ENABLED = true
 
@@ -72,6 +72,9 @@ export async function lookup({ candidate, durationMs, durationTrust, signal }) {
           instrumental: false,
           score
         })
+        if (score >= ACCEPT_THRESHOLD) {
+          break
+        }
       }
     }
   }
