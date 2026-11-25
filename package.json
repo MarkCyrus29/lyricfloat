@@ -33,7 +33,11 @@
       "target": "nsis"
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "identity": "-",
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "LyricFloat needs permission to detect the currently playing song from Spotify, Apple Music, and web browsers."
+      }
     },
     "linux": {
       "target": "AppImage"

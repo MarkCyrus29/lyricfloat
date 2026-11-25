@@ -22,8 +22,11 @@ Built with Electron, React, and Tailwind CSS.
 ### macOS
 1. Go to the [Releases](../../releases) page and download the latest `LyricFloat .dmg` file.
 2. Open the `.dmg` and drag **LyricFloat** into your **Applications** folder.
-3. On first launch, right-click (or `Ctrl` + click) **LyricFloat** in Applications and select **Open** (or allow it under **System Settings -> Privacy & Security -> Open Anyway**).
-4. Grant permission when prompted so LyricFloat can detect the active track from Spotify, Apple Music, or your browser.
+3. Because the app is not signed with a paid Apple Developer certificate, macOS Gatekeeper may say **"LyricFloat is damaged and can't be opened"**. To fix this, open **Terminal** and run:
+   ```bash
+   xattr -cr /Applications/LyricFloat.app
+   ```
+4. Launch **LyricFloat** from Applications and grant permission when prompted so it can detect the active track from Spotify, Apple Music, or your browser.
 
 ## Good to Know
 
